@@ -1,0 +1,4 @@
+Method,SuccessRate,AvgExposure,AvgSteps,AvgCrowdTime
+RL (ours),99.0,1.41,17.8,0.2
+Static SP,100.0,0.13,9.4,0.1
+Reactive,100.0,0.12,10.1,0.1
