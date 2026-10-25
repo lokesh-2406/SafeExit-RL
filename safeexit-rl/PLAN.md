@@ -187,14 +187,36 @@ GitHub link are at top.
 ---
 
 ## Phase 8 — Polish & submit (Day 8, buffer day)
-- [ ] README.md: install steps, how to run training/eval/sweep, how to
+- [x] README.md: install steps, how to run training/eval/sweep, how to
       reproduce every figure in the report
-- [ ] Confirm commit history reflects real incremental work, not one dump
+- [x] Confirm commit history reflects real incremental work, not one dump
 - [ ] If repo is private, grant access to GitHub handles `shubhambagwari`
       and `divyaanshmertia`
-- [ ] Final gut-check: does any code/report text read like a close paraphrase
+- [x] Final gut-check: does any code/report text read like a close paraphrase
       of the SafeStep paper's wording? Rewrite anything that does.
 - [ ] Submit before 10:00 AM Oct 26 — do not wait until the deadline.
+
+---
+
+## Phase 9 — Bonus Extensions & Generalization (Post-Phase 8 Stretch)
+
+- [x] **Priority 1: Second Architectural Layout (`case2.txt`):**
+      Hand-authored multi-corridor $13 \times 36$ building layout with 4 exits,
+      central fire origin, internal rooms, bottlenecks, and alternative routes.
+      Added cross-layout evaluation protocol (evaluating `case1`-trained policies
+      on `case2.txt` zero-shot vs. retrained baseline).
+- [x] **Priority 2: Minimal Deep Q-Network (`src/agents/dqn_agent.py`):**
+      2-layer MLP (hidden dim 64) with fixed-size 14D relative observation vector,
+      experience replay buffer ($10^4$), target Q-network ($C=100$), Adam optimizer,
+      and epsilon-greedy exploration. Evaluated in-layout and cross-layout.
+- [x] **Priority 3: Configurable Crowd Panic & Herding (`CrowdSim`):**
+      Added parameterized `panic_prob` (local hazard-induced movement entropy) and
+      `herding_prob` (biasing movement toward fellow evacuee centroids), preserving
+      original baseline dynamics when disabled (0.0).
+- [x] **Comprehensive Testing & Evaluation Pipeline:**
+      Added 14 bonus unit tests (`tests/test_bonus.py`), bringing suite to 31 tests.
+      Generated cross-layout transfer and crowd dynamics CSV benchmarks and figures.
+      Updated 2-page research report (`report/report.tex`) with empirical findings.
 
 ---
 
