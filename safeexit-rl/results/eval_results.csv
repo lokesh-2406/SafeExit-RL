@@ -1,4 +1,5 @@
 Method,SuccessRate,AvgExposure,AvgSteps,AvgCrowdTime
-RL (ours),99.0,1.41,17.8,0.2
+Tabular Q,99.0,1.41,17.8,0.2
+DQN (ours),100.0,0.05,13.6,0.1
 Static SP,100.0,0.13,9.4,0.1
 Reactive,100.0,0.12,10.1,0.1
