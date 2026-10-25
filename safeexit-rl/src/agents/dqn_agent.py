@@ -33,16 +33,9 @@ def encode_observation(obs) -> np.ndarray:
     """
     pos = obs.position
 
-    # 1. Traversability (4 features)
-    walls = getattr(obs, "local_walls", None)
-    if walls and len(walls) == 4:
-        fwd_free, bwd_free, left_free, right_free = [float(w) for w in walls]
-    else:
-        # Fallback if local_walls not provided
-        fwd_free = 1.0 if (pos[0] - 1, pos[1]) in obs.local_hazard_estimate else 0.0
-        bwd_free = 1.0 if (pos[0] + 1, pos[1]) in obs.local_hazard_estimate else 0.0
-        left_free = 1.0 if (pos[0], pos[1] - 1) in obs.local_hazard_estimate else 0.0
-        right_free = 1.0 if (pos[0], pos[1] + 1) in obs.local_hazard_estimate else 0.0
+    # 1. Traversability (4 features) — always provided by SafeExitEnv._build_observation
+    #    local_walls = (can_fwd, can_bwd, can_left, can_right) as bool
+    fwd_free, bwd_free, left_free, right_free = [float(w) for w in obs.local_walls]
 
     # 2. Exit bearing (2 features)
     b_dr, b_dc = obs.exit_bearing if obs.exit_bearing is not None else (0.0, 0.0)
@@ -159,7 +152,7 @@ class DQNAgent:
         self.target_net.eval()
 
         self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
-        self.criterion = nn.MSELoss()
+        self.criterion = nn.SmoothL1Loss()  # Huber loss: stable for large Q-value outliers
         self.replay_buffer = ReplayBuffer(capacity=buffer_size)
 
     def set_epsilon(self, episode: int):
