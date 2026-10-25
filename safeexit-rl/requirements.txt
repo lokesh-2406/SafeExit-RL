@@ -2,5 +2,5 @@ numpy>=1.24
 matplotlib>=3.7
 tqdm>=4.65
 pytest>=7.4
-# Optional, only needed if you build the DQN stretch goal:
-# torch>=2.1
+# DQN agent support:
+torch>=2.1
