@@ -5,6 +5,8 @@ Rendering helpers for SafeExit-RL.
 - render_snapshot: matplotlib figure with hazard heatmap, crowd overlay,
   agent/exit markers (Phase 6, used in report figures)
 """
+import os
+os.environ.setdefault("MPLCONFIGDIR", os.environ.get("TEMP", "/tmp"))
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")

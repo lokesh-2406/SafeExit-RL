@@ -6,6 +6,7 @@ Usage:
 """
 import argparse
 import os
+os.environ.setdefault("MPLCONFIGDIR", os.environ.get("TEMP", "/tmp"))
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -25,15 +26,23 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--layout", default="layouts/case1.txt")
     parser.add_argument("--episodes", type=int, default=3000)
+    parser.add_argument("--agent", choices=["q_learning", "dqn"], default="q_learning")
+    parser.add_argument("--state-mode", choices=["coordinate", "relative"], default="coordinate")
     parser.add_argument("--sensing-radius", type=int, default=2)
     parser.add_argument("--obs-noise-std", type=float, default=0.1)
     parser.add_argument("--obs-delay", type=int, default=2)
     parser.add_argument("--n-npcs", type=int, default=10)
+    parser.add_argument("--panic-prob", type=float, default=0.0)
+    parser.add_argument("--herding-prob", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--out", default="results/qtable.npy")
+    parser.add_argument("--out", default=None)
+    parser.add_argument("--plot-out", default=None)
     args = parser.parse_args()
 
     os.makedirs("results", exist_ok=True)
+
+    out_path = args.out or ("results/qtable.npy" if args.agent == "q_learning" else "results/dqn_model.pt")
+    plot_path = args.plot_out or ("results/training_curve.png" if args.agent == "q_learning" else "results/dqn_training_curve.png")
 
     env = SafeExitEnv(
         layout_path=args.layout,
@@ -42,8 +51,15 @@ def main():
         obs_delay=args.obs_delay,
         n_npcs=args.n_npcs,
         seed=args.seed,
+        panic_prob=args.panic_prob,
+        herding_prob=args.herding_prob,
     )
-    agent = QLearningAgent(seed=args.seed)
+
+    if args.agent == "dqn":
+        from src.agents.dqn_agent import DQNAgent
+        agent = DQNAgent(seed=args.seed, epsilon_decay_episodes=min(1500, max(1, args.episodes // 2)))
+    else:
+        agent = QLearningAgent(seed=args.seed, state_mode=args.state_mode)
 
     episode_rewards = []
     success_history = []
@@ -109,13 +125,18 @@ def main():
     ax.legend()
     ax.grid(True, alpha=0.3)
 
-    plt.suptitle("SafeExit-RL Training Progress", fontsize=14, fontweight='bold')
+    agent_label = "DQN" if args.agent == "dqn" else f"Q-Learning ({args.state_mode})"
+    plt.suptitle(f"SafeExit-RL Training Progress - {agent_label}", fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.savefig("results/training_curve.png", dpi=150)
+    plt.savefig(plot_path, dpi=150)
     plt.close()
+    print(f"Saved training plot to {plot_path}")
 
-    agent.save(args.out)
-    print(f"Saved Q-table ({len(agent.q_table)} states) to {args.out}")
+    agent.save(out_path)
+    if hasattr(agent, "q_table"):
+        print(f"Saved Q-table ({len(agent.q_table)} states) to {out_path}")
+    else:
+        print(f"Saved DQN model to {out_path}")
     print(f"Final success rate (last 100): "
           f"{np.mean(success_history[-100:])*100:.0f}%")
 
