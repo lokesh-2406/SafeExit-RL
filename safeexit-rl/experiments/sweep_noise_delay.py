@@ -10,6 +10,7 @@ Usage:
 """
 import argparse
 import os
+os.environ.setdefault("MPLCONFIGDIR", os.environ.get("TEMP", "/tmp"))
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -61,24 +62,42 @@ def evaluate_combo(agent, agent_type, layout, sigma, delay, n_episodes, seeds):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", default="results/qtable.npy")
+    parser.add_argument("--dqn-checkpoint", default="results/dqn_model.pt")
     parser.add_argument("--layout", default="layouts/case1.txt")
     args = parser.parse_args()
 
     os.makedirs("results", exist_ok=True)
 
     # Agents
-    rl_agent = QLearningAgent(epsilon_start=0.0, epsilon_end=0.0)
-    rl_agent.load(args.checkpoint)
+    agents = []
+    colors = {}
+    markers = {}
+
+    if os.path.exists(args.checkpoint):
+        rl_agent = QLearningAgent(epsilon_start=0.0, epsilon_end=0.0)
+        rl_agent.load(args.checkpoint)
+        agents.append(("Tabular Q", rl_agent, "rl"))
+        colors["Tabular Q"] = "#2196F3"
+        markers["Tabular Q"] = "o"
+
+    if os.path.exists(args.dqn_checkpoint):
+        from src.agents.dqn_agent import DQNAgent
+        dqn_agent = DQNAgent()
+        dqn_agent.load(args.dqn_checkpoint)
+        agents.append(("DQN (ours)", dqn_agent, "dqn"))
+        colors["DQN (ours)"] = "#9C27B0"
+        markers["DQN (ours)"] = "D"
+
     sp_agent = StaticShortestPathAgent()
     rr_agent = ReactiveReplanAgent(replan_interval=5)
 
-    agents = [
-        ("RL (ours)", rl_agent, "rl"),
-        ("Static SP", sp_agent, "static"),
-        ("Reactive", rr_agent, "reactive"),
-    ]
-    colors = {"RL (ours)": "#2196F3", "Static SP": "#FF9800", "Reactive": "#4CAF50"}
-    markers = {"RL (ours)": "o", "Static SP": "s", "Reactive": "^"}
+    agents.append(("Static SP", sp_agent, "static"))
+    colors["Static SP"] = "#FF9800"
+    markers["Static SP"] = "s"
+
+    agents.append(("Reactive", rr_agent, "reactive"))
+    colors["Reactive"] = "#4CAF50"
+    markers["Reactive"] = "^"
 
     # --- Sweep sigma (fix delay=2) ---
     print("Sweeping sigma (delay=2)...")

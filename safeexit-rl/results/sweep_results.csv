@@ -1,25 +1,33 @@
 Sweep,Param,Method,SuccessRate,AvgExposure
-sigma,0.0,RL (ours),100.0,0.09
+sigma,0.0,Tabular Q,100.0,0.09
+sigma,0.0,DQN (ours),100.0,0.09
 sigma,0.0,Static SP,100.0,0.14
 sigma,0.0,Reactive,100.0,0.11
-sigma,0.1,RL (ours),97.9,2.92
+sigma,0.1,Tabular Q,97.9,2.92
+sigma,0.1,DQN (ours),100.0,0.01
 sigma,0.1,Static SP,100.0,0.16
 sigma,0.1,Reactive,100.0,0.13
-sigma,0.2,RL (ours),100.0,0.06
+sigma,0.2,Tabular Q,100.0,0.06
+sigma,0.2,DQN (ours),100.0,0.19
 sigma,0.2,Static SP,97.9,1.91
 sigma,0.2,Reactive,97.9,3.90
-sigma,0.3,RL (ours),100.0,0.00
+sigma,0.3,Tabular Q,95.8,3.39
+sigma,0.3,DQN (ours),97.9,2.59
 sigma,0.3,Static SP,87.5,3.74
 sigma,0.3,Reactive,97.9,4.21
-delay,0,RL (ours),100.0,0.04
+delay,0,Tabular Q,100.0,0.04
+delay,0,DQN (ours),100.0,0.03
 delay,0,Static SP,100.0,0.07
 delay,0,Reactive,100.0,0.05
-delay,2,RL (ours),97.9,2.92
+delay,2,Tabular Q,97.9,2.92
+delay,2,DQN (ours),100.0,0.01
 delay,2,Static SP,100.0,0.16
 delay,2,Reactive,100.0,0.13
-delay,5,RL (ours),100.0,0.05
+delay,5,Tabular Q,100.0,0.05
+delay,5,DQN (ours),100.0,0.25
 delay,5,Static SP,100.0,0.12
 delay,5,Reactive,100.0,0.12
-delay,10,RL (ours),100.0,0.09
+delay,10,Tabular Q,100.0,0.09
+delay,10,DQN (ours),97.9,0.86
 delay,10,Static SP,100.0,0.12
 delay,10,Reactive,100.0,0.12
