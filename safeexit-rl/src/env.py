@@ -30,6 +30,7 @@ class Observation:
     local_crowd_density: dict    # {(r,c): count}
     staleness: dict              # {(r,c): steps_since_last_refresh}
     exit_bearing: tuple          # unit-ish direction vector toward believed-nearest exit
+    local_walls: tuple = ()      # (can_fwd, can_bwd, can_left, can_right) boolean traversability
 
 
 class HazardField:
@@ -81,10 +82,13 @@ class CrowdSim:
     some randomness to produce realistic congestion patterns.
     """
 
-    def __init__(self, n_agents: int, building: "GridBuilding", seed: Optional[int] = None):
+    def __init__(self, n_agents: int, building: "GridBuilding", seed: Optional[int] = None,
+                 panic_prob: float = 0.0, herding_prob: float = 0.0):
         self.n_agents = n_agents
         self.building = building
         self.rng = np.random.default_rng(seed)
+        self.panic_prob = panic_prob
+        self.herding_prob = herding_prob
         self.positions: list[tuple] = []
         self.evacuated: list[bool] = []
         self._init_positions()
@@ -116,16 +120,47 @@ class CrowdSim:
                 best = ex
         return best
 
-    def step(self):
+    def _nearby_crowd_target(self, idx: int, max_dist: int = 3) -> Optional[tuple]:
+        """Find the nearest fellow evacuee to herd toward."""
+        pos = self.positions[idx]
+        best_target = None
+        best_d = float('inf')
+        for j, other_pos in enumerate(self.positions):
+            if j == idx or self.evacuated[j]:
+                continue
+            d = abs(pos[0] - other_pos[0]) + abs(pos[1] - other_pos[1])
+            if 0 < d <= max_dist and d < best_d:
+                best_d = d
+                best_target = other_pos
+        return best_target
+
+    def step(self, hazard: Optional[HazardField] = None, t: int = 0):
         """Move each non-evacuated NPC one step toward nearest exit with
-        some noise. NPCs that reach an exit are marked as evacuated."""
+        some noise. Optionally includes herding (following nearby peers) and
+        panic (increased randomness under high local hazard). NPCs that reach
+        an exit are marked as evacuated."""
         for i in range(self.n_agents):
             if self.evacuated[i]:
                 continue
             pos = self.positions[i]
-            target = self._nearest_exit(pos)
+
+            # 1. Target determination: check for herding tendency
+            target = None
+            if self.herding_prob > 0 and self.rng.random() < self.herding_prob:
+                target = self._nearby_crowd_target(i)
+
+            if target is None:
+                target = self._nearest_exit(pos)
+
             if target is None:
                 continue
+
+            # 2. Check for hazard panic condition
+            in_panic = False
+            if self.panic_prob > 0 and hazard is not None:
+                local_haz = hazard.true_value(pos, t)
+                if local_haz > 0.2 and self.rng.random() < self.panic_prob:
+                    in_panic = True
 
             # Compute biased direction toward target
             dr = np.sign(target[0] - pos[0])
@@ -149,12 +184,16 @@ class CrowdSim:
             if not valid:
                 continue  # stuck, wait
 
-            # Weighted selection: first candidates (toward target) get higher weight
-            n_biased = min(2, len(valid))
-            weights = np.ones(len(valid))
-            for j in range(n_biased):
-                if valid[j] in candidates[:2]:  # toward-target candidates
-                    weights[j] = 4.0
+            if in_panic:
+                # Under panic, directional bias collapses into uniform/erratic movement
+                weights = np.ones(len(valid))
+            else:
+                # Weighted selection: first candidates (toward target) get higher weight
+                n_biased = min(2, len(valid))
+                weights = np.ones(len(valid))
+                for j in range(n_biased):
+                    if valid[j] in candidates[:2]:  # toward-target candidates
+                        weights[j] = 4.0
             weights /= weights.sum()
 
             idx = self.rng.choice(len(valid), p=weights)
@@ -223,13 +262,16 @@ class SafeExitEnv:
 
     def __init__(self, layout_path: str, sensing_radius: int = 2,
                  obs_noise_std: float = 0.1, obs_delay: int = 2,
-                 n_npcs: int = 10, max_steps: int = 200, seed: Optional[int] = None):
+                 n_npcs: int = 10, max_steps: int = 200, seed: Optional[int] = None,
+                 panic_prob: float = 0.0, herding_prob: float = 0.0):
         self.building = GridBuilding(layout_path)
         self.sensing_radius = sensing_radius
         self.obs_noise_std = obs_noise_std
         self.obs_delay = obs_delay
         self.n_npcs = n_npcs
         self.max_steps = max_steps
+        self.panic_prob = panic_prob
+        self.herding_prob = herding_prob
         self.rng = np.random.default_rng(seed)
 
         self.hazard: Optional[HazardField] = None
@@ -280,6 +322,8 @@ class SafeExitEnv:
             n_agents=self.n_npcs,
             building=self.building,
             seed=int(self.rng.integers(2**31)),
+            panic_prob=self.panic_prob,
+            herding_prob=self.herding_prob,
         )
 
         return self._build_observation()
@@ -310,7 +354,7 @@ class SafeExitEnv:
         self.visited.add(self.agent_pos)
 
         # 2. Advance hazard field (time advances automatically) and crowd sim
-        self.crowd.step()
+        self.crowd.step(hazard=self.hazard, t=self.t)
 
         # 3. Update cumulative true exposure using ground-truth hazard
         true_haz = self.hazard.true_value(self.agent_pos, self.t)
@@ -413,12 +457,21 @@ class SafeExitEnv:
         # Exit bearing: direction to nearest exit that agent believes is safe
         exit_bearing = self._compute_exit_bearing()
 
+        # Local wall / traversability for cardinal directions: forward, backward, left, right
+        local_walls = (
+            bool(self.building.is_free((pos[0] - 1, pos[1]))),
+            bool(self.building.is_free((pos[0] + 1, pos[1]))),
+            bool(self.building.is_free((pos[0], pos[1] - 1))),
+            bool(self.building.is_free((pos[0], pos[1] + 1))),
+        )
+
         return Observation(
             position=pos,
             local_hazard_estimate=all_hazard,
             local_crowd_density=local_crowd,
             staleness=staleness,
             exit_bearing=exit_bearing,
+            local_walls=local_walls,
         )
 
     def _compute_exit_bearing(self) -> tuple:
