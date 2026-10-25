@@ -45,8 +45,13 @@ def _crowd_bin(count: int) -> int:
     return min(count, 3)
 
 
-def discretize_observation(obs) -> tuple:
-    """Map an Observation object to a small discrete state key."""
+def discretize_observation(obs, state_mode: str = "coordinate") -> tuple:
+    """Map an Observation object to a discrete state key.
+
+    Modes:
+      - 'coordinate': (row, col, haz_b, crowd_b, exit_dir)
+      - 'relative': (local_walls, haz_b, crowd_b, exit_dir)
+    """
     pos = obs.position
 
     # Average believed hazard from local_hazard_estimate
@@ -61,13 +66,18 @@ def discretize_observation(obs) -> tuple:
     # Exit direction
     exit_dir = _bearing_to_dir(obs.exit_bearing)
 
+    if state_mode == "relative":
+        walls = getattr(obs, "local_walls", ())
+        return (walls, haz_b, crowd_b, exit_dir)
     return (pos[0], pos[1], haz_b, crowd_b, exit_dir)
 
 
 class QLearningAgent:
     def __init__(self, alpha: float = 0.1, gamma: float = 0.95,
                  epsilon_start: float = 1.0, epsilon_end: float = 0.05,
-                 epsilon_decay_episodes: int = 1500, seed: int = 0):
+                 epsilon_decay_episodes: int = 1500, seed: int = 0,
+                 state_mode: str = "coordinate",
+                 unseen_action_fallback: str = "exit_bearing"):
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon_start
@@ -75,22 +85,45 @@ class QLearningAgent:
         self.epsilon_end = epsilon_end
         self.epsilon_decay_episodes = epsilon_decay_episodes
         self.rng = np.random.default_rng(seed)
+        self.state_mode = state_mode
+        self.unseen_action_fallback = unseen_action_fallback
         self.q_table = defaultdict(lambda: np.zeros(len(ACTIONS)))
 
     def set_epsilon(self, episode: int):
         frac = min(1.0, episode / max(1, self.epsilon_decay_episodes))
         self.epsilon = self.epsilon_start + frac * (self.epsilon_end - self.epsilon_start)
 
-    def select_action(self, obs) -> str:
-        state = discretize_observation(obs)
-        if self.rng.random() < self.epsilon:
+    def _fallback_action(self, obs) -> str:
+        """Choose action when Q-values are uninformative (all equal/zero)."""
+        if self.unseen_action_fallback == "arbitrary":
+            return ACTIONS[0]
+        if self.unseen_action_fallback == "random":
             return ACTIONS[self.rng.integers(len(ACTIONS))]
+
+        # Default: follow exit bearing if non-zero
+        dr, dc = obs.exit_bearing
+        if abs(dc) > abs(dr):
+            return "left" if dc < 0 else "right"
+        elif dr != 0:
+            return "forward" if dr < 0 else "backward"
+        return ACTIONS[self.rng.integers(len(ACTIONS))]
+
+    def select_action(self, obs, eval_mode: bool = False) -> str:
+        state = discretize_observation(obs, state_mode=self.state_mode)
+        eps = 0.0 if eval_mode else self.epsilon
+        if self.rng.random() < eps:
+            return ACTIONS[self.rng.integers(len(ACTIONS))]
+
         q_values = self.q_table[state]
+        # Check if state is unvisited / all Q-values equal
+        if np.all(q_values == q_values[0]):
+            return self._fallback_action(obs)
+
         return ACTIONS[int(np.argmax(q_values))]
 
     def update(self, obs, action: str, reward: float, next_obs, done: bool):
-        state = discretize_observation(obs)
-        next_state = discretize_observation(next_obs)
+        state = discretize_observation(obs, state_mode=self.state_mode)
+        next_state = discretize_observation(next_obs, state_mode=self.state_mode)
         a_idx = ACTIONS.index(action)
         target = reward
         if not done:
@@ -99,17 +132,25 @@ class QLearningAgent:
         self.q_table[state][a_idx] += self.alpha * td_error
 
     def save(self, path: str):
-        """Serialize Q-table to file via pickle."""
+        """Serialize Q-table and metadata to file via pickle."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        # Convert defaultdict to regular dict for safe serialization
-        data = {k: v.tolist() for k, v in self.q_table.items()}
+        data = {
+            "state_mode": self.state_mode,
+            "q_table": {k: v.tolist() for k, v in self.q_table.items()},
+        }
         with open(path, 'wb') as f:
             pickle.dump(data, f)
 
     def load(self, path: str):
-        """Load Q-table from file."""
+        """Load Q-table and metadata from file."""
         with open(path, 'rb') as f:
             data = pickle.load(f)
         self.q_table = defaultdict(lambda: np.zeros(len(ACTIONS)))
-        for k, v in data.items():
-            self.q_table[k] = np.array(v)
+        if isinstance(data, dict) and "q_table" in data:
+            self.state_mode = data.get("state_mode", self.state_mode)
+            for k, v in data["q_table"].items():
+                self.q_table[k] = np.array(v)
+        else:
+            # Backward-compatible loading for legacy raw dict checkpoints
+            for k, v in data.items():
+                self.q_table[k] = np.array(v)
