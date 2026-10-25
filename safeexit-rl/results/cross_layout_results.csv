@@ -1,6 +1,6 @@
 Method,SuccessRate,AvgExposure,AvgSteps,AvgCrowdTime
 Tabular Q (Coord),10.0,47.93,180.9,0.1
 Tabular Q (Rel),24.0,57.19,153.4,0.0
-DQN (Rel 14D),37.0,42.20,130.5,0.2
+DQN (Rel 14D),25.0,48.42,151.9,0.6
 Static SP,100.0,0.03,10.7,0.0
 Reactive,99.0,1.83,12.9,0.0
