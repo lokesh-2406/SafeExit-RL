@@ -54,7 +54,7 @@ $$r_t = w_1 R_{\text{progress}} + w_2 R_{\text{hazard}} + w_3 R_{\text{congestio
 | Collision penalty | `-1.0` | Discourages invalid movements into walls. |
 | Believed hazard penalty | `-\hat{h}(p_t)` | Agent is penalized based on its subjective belief of cell danger. |
 | Crowd congestion penalty | `-0.2 * count` | Encourages routing away from congested choke points. |
-| Terminal reward | `20.0 * max(0, 1 - true_exposure)` | Large completion reward, scaled down by ground-truth cumulative exposure. |
+| Terminal reward | `20.0 * max(0, 1 - post_delay_exposure)` | Large completion reward, scaled down by ground-truth post-delay evacuation exposure (equals total exposure for Case 1 immediate evacuation). |
 
 ---
 
@@ -75,7 +75,7 @@ SafeExit-RL benchmarks four primary methods across three systematically contrast
 | **Case 3** | `layouts/case2.txt` | 0 steps (Cross-Layout) | Zero-shot transfer of Case 1-trained policies to an unseen, structurally distinct building ($13 \times 36$, 4 exits) without retraining. |
 
 ### Delay Calibration & Exposure Accounting
-- **Simulation Time Semantics**: Grid cells represent $1.0\text{ m} \times 1.0\text{ m}$ spacing. Pedestrian movement speed $\approx 1.0\text{ m/s} \implies 1\text{ simulation step} \approx 1\text{ second}$. Egress in Case 1 typically takes 10–18 seconds.
+- **Simulation Time Semantics**: Grid cells represent $1.0\text{ m} \times 1.0\text{ m}$ spacing. Pedestrian movement speed $\approx 1.0\text{ m/s} \implies 1\text{ simulation step} \approx 1\text{ second}$. Egress in Case 1 typically takes 10-18 steps (approx. 10-18 seconds).
 - **Physical Interpretation of Delay**: At $t_{\text{delay}} = 20\text{ s}$, the hazard radius has expanded from $0.95\text{ m}$ to $2.38\text{ m}$, heavily contaminating the central corridor and causing ~40% of simulated NPCs to evacuate. At $t \ge 60\text{ s}$, the eastern exit becomes blocked ($\ge 0.30$ hazard). Thus, $t=20\text{ s}$ constitutes a rigorous, calibrated bottleneck without making escape physically impossible.
 - **Exposure Metric Separation**: Total exposure accumulated from ignition is partitioned into:
   $$\text{Total Exposure} = E_{\text{pre-delay}} + E_{\text{post-delay}}$$
@@ -101,7 +101,7 @@ pip install -r requirements.txt
 ```bash
 python -m pytest -v
 ```
-*(38 comprehensive unit tests covering grid parsing, hazard monotonicity, crowd movement, noise/staleness, reward signs, DQN training/replay, Case 3 connectivity, panic/herding, delay backward compatibility, stationary delay accounting, and zero-shot transfer).*
+*(39 comprehensive unit tests covering grid parsing, hazard monotonicity, crowd movement, noise/staleness, reward signs, DQN training/replay, Case 3 connectivity, panic/herding, delay backward compatibility, stationary delay accounting, and zero-shot transfer).*
 
 ### 3. Case 1: Original Layout, Immediate Evacuation
 **Evaluate Case 1 Primary Methods:**
@@ -153,7 +153,7 @@ Outputs:
 
 ## Experimental Results
 
-### 1. Case 1 — Immediate Evacuation (\layouts/case1.txt\, \text{delay} = 0$)
+### 1. Case 1 -- Immediate Evacuation (`layouts/case1.txt`, $t_{\text{delay}} = 0$)
 | Primary Method | Success % | Total Exposure | Post-Delay Exposure | Evacuation Steps | High-Crowd Steps |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **DQN (Ours)** | **100.0%** | **0.08** | **0.08** | 17.4 | 0.1 |
@@ -163,7 +163,7 @@ Outputs:
 
 *Takeaway:* DQN achieves the lowest cumulative hazard exposure across all methods (0.08), maintaining safe standoff distances from expanding hazard while smoothly routing around evacuee congestion.
 
-### 2. Case 2 — Delayed Evacuation (\layouts/case1.txt\, \text{delay} = 20$)
+### 2. Case 2 -- Delayed Evacuation (`layouts/case1.txt`, $t_{\text{delay}} = 20$)
 | Primary Method | Success % | Total Exposure | Post-Delay Exposure | Evacuation Steps | High-Crowd Steps |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **DQN (Ours)** | **100.0%** | **0.39** | **0.06** | 14.9 | 0.0 |
@@ -173,16 +173,22 @@ Outputs:
 
 *Takeaway:* Under a 20-step pre-evacuation delay, hazard engulfs the central corridor. Reactive replanning suffers severely (9.91 exposure, 95% success) due to belief staleness and local oscillation. DQN proves remarkably resilient, achieving 100% success and a post-delay exposure of just 0.06 (lower than Static Shortest Path's 0.23).
 
-### 3. Case 3 — Cross-Layout Generalization (\layouts/case2.txt\, Zero Retraining)
+### 3. Case 3 -- Cross-Layout Generalization (`layouts/case2.txt`, Zero Retraining)
 | Primary Method | Success % | Total Exposure | Evacuation Steps | High-Crowd Steps | Notes |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **DQN (Ours)** | **25.0%** | 48.42 | 151.9 | 0.6 | Continuous 14D relative state transfer |
 | **Relative Tabular Q** | 24.0% | 57.19 | 153.4 | 0.0 | Discrete relative state transfer |
 | **Static Shortest Path** | 100.0% | 0.03 | 10.7 | 0.0 | Global topology BFS baseline |
 | **Reactive Replanning** | 99.0% | 1.83 | 12.9 | 0.0 | Global topology periodic replanning |
-| *Tabular Q (Coordinate - Ablation)* | *10.0%* | *47.93* | *180.9* | *0.1* | *Overfits to Case 1 grid coordinates* |
 
 *Takeaway:* Relative state representations (Relative Tabular Q at 24% and DQN at 25%) achieve 2.5x higher success rates than coordinate memorization (10%), successfully navigating local corridors via exit bearing. Classical baselines leverage full topological maps to find global paths, underscoring the distinction between local perception-action RL and global graph search in unseen environments.
+
+#### Ablative Baseline (Excluded from Primary Comparison)
+Coordinate-based Tabular Q-learning is excluded from the primary comparison because absolute spatial coordinates cannot transfer across building geometries. It is retained strictly as an ablative benchmark demonstrating spatial memorization:
+
+| Ablative Method | Success % | Total Exposure | Evacuation Steps | High-Crowd Steps | Notes |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Coordinate Tabular Q** | 10.0% | 47.93 | 180.9 | 0.1 | Overfits to Case 1 coordinates; fails on unseen geometry |
 
 ---
 

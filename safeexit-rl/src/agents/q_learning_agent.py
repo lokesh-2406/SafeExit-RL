@@ -114,6 +114,9 @@ class QLearningAgent:
         if self.rng.random() < eps:
             return ACTIONS[self.rng.integers(len(ACTIONS))]
 
+        if state not in self.q_table:
+            return self._fallback_action(obs)
+
         q_values = self.q_table[state]
         # Check if state is unvisited / all Q-values equal
         if np.all(q_values == q_values[0]):

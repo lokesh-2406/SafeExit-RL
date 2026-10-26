@@ -100,8 +100,12 @@ r_t = w1*R_progress + w2*R_hazard_belief + w3*R_congestion + w4*R_terminal
   intentional mismatch that creates interesting behavior)
 - `R_congestion`: penalty proportional to local crowd density at current cell
 - `R_terminal`: on reaching exit, big positive reward, SCALED DOWN by the
-  agent's TRUE cumulative hazard exposure over the episode (ground truth used
-  here deliberately — "the world punishes risks you didn't know about")
+  agent's TRUE cumulative hazard exposure over the evacuation phase (ground truth used
+  here deliberately — "the world punishes risks you didn't know about").
+  *(Specification note: In Case 1 immediate evacuation, post-delay exposure equals total
+  cumulative exposure. In Case 2 delayed evacuation, Phase 9 is authoritative: R_terminal
+  scales with post-delay evacuation exposure to preserve policy learning gradients while
+  total cumulative exposure is logged separately in metrics).*
 
 - [ ] Log both `cumulative_true_exposure` and `cumulative_believed_exposure`
       per episode — you need both for the eval story in the report.
@@ -156,8 +160,8 @@ over multiple random seeds / start positions:
 - [ ] True cumulative hazard exposure (ground truth)
 - [ ] Time-to-exit (steps)
 - [ ] Time spent in high-crowd-density cells
-- [ ] Sweep: re-run all three methods across a grid of (σ, delay) values,
-      plot success rate / exposure vs. σ and vs. delay — THIS is your
+- [ ] Sweep: re-run all three methods across a grid of (sigma, delay) values,
+      plot success rate / exposure vs. sigma and vs. delay -- THIS is your
       differentiated headline result, make sure it's in the report.
 
 **Done when:** you have 3–4 clean comparison plots (bar charts for the main
@@ -198,7 +202,7 @@ GitHub link are at top.
 
 ---
 
-## Phase 9 — Final Three-Case Experiment Revision
+## Phase 9 — Final Three-Case Experiment Revision (Authoritative Specification)
 
 ### 1. Three-Case Experimental Framework
 - [x] **Case 1: Original Layout, Immediate Evacuation (`layouts/case1.txt`, delay=0):**
@@ -210,7 +214,7 @@ GitHub link are at top.
   - Primary occupant remains stationary during delay while hazard expands and crowd advances.
   - Delay does not consume the post-delay evacuation step budget ($T_{\text{max}}=200$).
   - Separate exposure accounting: Total Exposure = Pre-Delay Exposure + Post-Delay Exposure (no double counting).
-  - Learning gradient preserved: Terminal reward scaling uses post-delay exposure $E_{\text{post}}$ so passive pre-delay exposure does not nullify exit reward.
+  - Authoritative reward semantics: Terminal reward scaling uses post-delay evacuation exposure $E_{\text{post}}$ in $\max(0, 1 - E_{\text{post}})$ so passive pre-delay exposure does not nullify exit reward.
   - Fresh Case 2 models trained with delay: `results/case2_qtable_relative.npy` and `results/case2_dqn_model.pt`.
   - All four primary methods evaluated under identical conditions: `results/case2_eval_results.csv`, `results/case2_comparison.png`.
 - [x] **Case 3: Cross-Layout Generalization (Unseen `layouts/case2.txt`, zero retraining):**
@@ -227,8 +231,8 @@ GitHub link are at top.
 - **Physical Distinction:** The synthetic radial hazard model is an abstract proxy for smoke/thermal tenability, distinct from computational fluid dynamics (CFD/FDS) and physical Fractional Effective Dose (FED).
 
 ### 3. Comprehensive Test Suite
-- [x] Renamed `tests/test_bonus.py` $\to$ `tests/test_extended_features.py` (38 tests total across suite).
-- [x] Added tests for zero-delay backward compatibility, stationary delay accumulation, crowd advancement during delay, step budget preservation, exposure separation, four primary methods evaluation, and Case 3 zero-shot execution.
+- [x] Renamed `tests/test_bonus.py` $\to$ `tests/test_extended_features.py` (39 tests total across suite).
+- [x] Added tests for zero-delay backward compatibility, stationary delay accumulation, crowd advancement during delay, step budget preservation, exposure separation, four primary methods evaluation, layout smoke execution, and trained Case 1 policy zero-shot transfer without weight mutation.
 
 ---
 

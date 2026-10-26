@@ -376,15 +376,14 @@ def test_four_primary_methods_evaluate_successfully():
 
 
 # ============================================================================
-# 7. Case 3 Zero-Shot Generalization Test
+# 7. Case 3 Zero-Shot Generalization & Transfer Tests
 # ============================================================================
 
-def test_case3_zero_shot_execution():
-    """Policies trained or initialized on Case 1 execute zero-shot on Case 3 layout."""
+def test_case3_layout_smoke_execution():
+    """Smoke test: uninitialized policies execute mechanics safely on Case 3 layout."""
     agent_dqn = DQNAgent(seed=1)
     agent_rel = QLearningAgent(state_mode="relative", unseen_action_fallback="exit_bearing", seed=1)
 
-    # Evaluate zero-shot on CASE3_LAYOUT
     dqn_res = evaluate_agent(agent_dqn, "dqn", CASE3_LAYOUT, n_episodes=2, seeds=[0])
     rel_res = evaluate_agent(agent_rel, "rl", CASE3_LAYOUT, n_episodes=2, seeds=[0])
 
@@ -393,3 +392,49 @@ def test_case3_zero_shot_execution():
     for r in dqn_res + rel_res:
         assert isinstance(r["success"], bool)
         assert r["steps"] > 0
+
+
+def test_case3_trained_policy_zero_shot_transfer():
+    """Verify actual Case 1-trained policies transfer zero-shot without adaptation.
+
+    Loads the Case 1 checkpoints, verifies relative state configuration,
+    snapshots weights/Q-table before rollout, asserts zero mutation during
+    evaluation on Case 3 layout, and checks metric generation.
+    """
+    dqn_ckpt = "results/dqn_model.pt"
+    rel_ckpt = "results/qtable_relative.npy"
+
+    if not (os.path.exists(dqn_ckpt) and os.path.exists(rel_ckpt)):
+        pytest.skip(f"Case 1 trained checkpoints missing: {dqn_ckpt} or {rel_ckpt}")
+
+    # 1. Load trained Case 1 DQN agent
+    agent_dqn = DQNAgent(seed=42)
+    agent_dqn.load(dqn_ckpt)
+    dqn_weights_before = [p.clone().detach() for p in agent_dqn.q_net.parameters()]
+
+    # 2. Load trained Case 1 Relative Tabular Q-learning agent
+    agent_rel = QLearningAgent(state_mode="relative", unseen_action_fallback="exit_bearing", seed=42)
+    agent_rel.load(rel_ckpt)
+    assert agent_rel.state_mode == "relative", "Agent must retain relative state mode"
+    assert len(agent_rel.q_table) > 0, "Loaded Q-table must contain trained entries"
+    q_table_before = {k: v.copy() for k, v in agent_rel.q_table.items()}
+
+    # 3. Evaluate zero-shot on unseen Case 3 layout
+    dqn_res = evaluate_agent(agent_dqn, "dqn", CASE3_LAYOUT, n_episodes=2, seeds=[42])
+    rel_res = evaluate_agent(agent_rel, "rl", CASE3_LAYOUT, n_episodes=2, seeds=[42])
+
+    # 4. Assert zero mutation: no weights or Q-table entries altered
+    for p_before, p_after in zip(dqn_weights_before, agent_dqn.q_net.parameters()):
+        assert torch.allclose(p_before, p_after), "DQN weights must not mutate during zero-shot evaluation"
+
+    assert len(agent_rel.q_table) == len(q_table_before), "Q-table size must not change during zero-shot evaluation"
+    for k, v_before in q_table_before.items():
+        assert np.array_equal(v_before, agent_rel.q_table[k]), f"Q-table entry {k} was altered during evaluation"
+
+    # 5. Verify valid evaluation metrics
+    assert len(dqn_res) == 2
+    assert len(rel_res) == 2
+    for r in dqn_res + rel_res:
+        assert isinstance(r["success"], bool)
+        assert r["steps"] > 0
+        assert r["true_exposure"] >= 0.0
