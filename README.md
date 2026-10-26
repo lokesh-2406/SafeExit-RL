@@ -11,7 +11,9 @@ Inspired by, and benchmarked conceptually against, Fang et al. (2026), *"Develop
 
 ## Repository Structure
 ```text
-safeexit-rl/
+SafeExit-RL/
+├── demo/
+│   └── simulator.html             # Standalone interactive browser simulation & viva demo
 ├── layouts/
 │   ├── case1.txt                  # Hand-authored building grid (9x30, 2 exits, fire origin)
 │   └── case2.txt                  # Multi-wing layout (13x36, 4 exits, rooms, central fire)
@@ -30,14 +32,12 @@ safeexit-rl/
 │   ├── sweep_noise_delay.py       # Sensor noise (sigma) & latency (tau) sensitivity sweep
 │   ├── eval_cross_layout.py       # Zero-shot cross-layout transfer evaluation
 │   └── sweep_crowd_dynamics.py    # Panic and herding behavioral sweep
-├── report/
-│   └── report.tex                 # 2-page two-column Overleaf-compatible LaTeX report
-├── results/                       # Checkpoints, plots, and CSV results
+├── results/                       # Trained models (.pt, .npy), comparative curves, and CSV metrics
 ├── tests/
 │   ├── test_env.py                # 17 core environment and reward tests
-│   └── test_extended_features.py  # 21 extended tests (Case 3, DQN, delay, exposure, panic/herding)
-├── PLAN.md                        # Phased project specification
-└── requirements.txt
+│   └── test_extended_features.py  # 22 extended tests (Case 3, DQN, delay, exposure, panic/herding)
+├── requirements.txt               # Project dependencies
+└── README.md
 ```
 
 ---
@@ -102,14 +102,22 @@ python -m pytest -v
 ```
 *(39 comprehensive unit tests covering grid parsing, hazard monotonicity, crowd movement, noise/staleness, reward signs, DQN training/replay, Case 3 connectivity, panic/herding, delay backward compatibility, stationary delay accounting, and zero-shot transfer).*
 
-### 3. Case 1: Original Layout, Immediate Evacuation
+### 3. Interactive Browser Simulation (Viva Demo)
+Open `demo/simulator.html` directly in any web browser (completely self-contained, no server or dependencies required):
+- **Live Scenarios**:
+  - **1. The Cutoff Trap (Case 1 Layout)**: Fire ignites at $(4, 22)$; Static Shortest-Path blindly walks into fire at Exit 2, while SafeExit-RL detours safely to Exit 1.
+  - **2. Spreading Fire & Pre-Evacuation Delay (Case 2)**: Same layout with fire pre-expanded ($r=5.0$) due to delayed start, demonstrating robustness under high sensor noise and delay.
+  - **3. Cross-Layout Zero-Shot Transfer (Case 3)**: SafeExit-RL deployed on the unseen 4-exit labyrinth (`layouts/case2.txt`) without retraining.
+- **Controls & Features**: Interactive playback speed, crowd panic and herding sliders, sensory noise toggles, live health and exposure metrics, and step-by-step path traces.
+
+### 4. Case 1: Original Layout, Immediate Evacuation
 **Evaluate Case 1 Primary Methods:**
 ```bash
 python -m src.evaluate --layout layouts/case1.txt --pre-evacuation-delay 0 --rel-checkpoint results/qtable_relative.npy --dqn-checkpoint results/dqn_model.pt --out-csv results/case1_eval_results.csv --out-plot results/case1_comparison.png --title "Case 1: Immediate Evacuation (Original Layout)"
 ```
 Outputs: `results/case1_eval_results.csv`, `results/case1_comparison.png`.
 
-### 4. Case 2: Same Layout, Delayed Evacuation ($t_{\text{delay}} = 20$)
+### 5. Case 2: Same Layout, Delayed Evacuation ($t_{\text{delay}} = 20$)
 **Train fresh Case 2 models under delay:**
 ```bash
 # Relative Tabular Q-learning
@@ -125,14 +133,14 @@ python -m src.evaluate --layout layouts/case1.txt --pre-evacuation-delay 20 --re
 ```
 Outputs: `results/case2_eval_results.csv`, `results/case2_comparison.png`.
 
-### 5. Case 3: Cross-Layout Generalization (Unseen Layout)
+### 6. Case 3: Cross-Layout Generalization (Unseen Layout)
 **Evaluate Case 1 policies zero-shot on Case 3 layout (`layouts/case2.txt`):**
 ```bash
 python -m experiments.eval_cross_layout --layout layouts/case2.txt --dqn-checkpoint results/dqn_model.pt --rel-checkpoint results/qtable_relative.npy --out-csv results/case3_cross_layout_results.csv --out-plot results/case3_cross_layout_comparison.png
 ```
 Outputs: `results/case3_cross_layout_results.csv`, `results/case3_cross_layout_comparison.png`.
 
-### 6. Reproduce Noise & Latency Sensitivity Sweep
+### 7. Reproduce Noise & Latency Sensitivity Sweep
 ```bash
 python -m experiments.sweep_noise_delay --checkpoint results/qtable_relative.npy --dqn-checkpoint results/dqn_model.pt --layout layouts/case1.txt
 ```
@@ -140,7 +148,7 @@ Outputs:
 - 4-panel sweep figure: `results/sweep_noise_delay.png`
 - Detailed CSV: `results/sweep_results.csv`
 
-### 7. Run Crowd Panic and Herding Sweep
+### 8. Run Crowd Panic and Herding Sweep
 ```bash
 python -m experiments.sweep_crowd_dynamics --layout layouts/case1.txt --n-eval-episodes 50
 ```
