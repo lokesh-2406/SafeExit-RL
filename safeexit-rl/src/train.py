@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--n-npcs", type=int, default=10)
     parser.add_argument("--panic-prob", type=float, default=0.0)
     parser.add_argument("--herding-prob", type=float, default=0.0)
+    parser.add_argument("--pre-evacuation-delay", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default=None)
     parser.add_argument("--plot-out", default=None)
@@ -53,6 +54,7 @@ def main():
         seed=args.seed,
         panic_prob=args.panic_prob,
         herding_prob=args.herding_prob,
+        pre_evacuation_delay=args.pre_evacuation_delay,
     )
 
     if args.agent == "dqn":
