@@ -100,8 +100,12 @@ r_t = w1*R_progress + w2*R_hazard_belief + w3*R_congestion + w4*R_terminal
   intentional mismatch that creates interesting behavior)
 - `R_congestion`: penalty proportional to local crowd density at current cell
 - `R_terminal`: on reaching exit, big positive reward, SCALED DOWN by the
-  agent's TRUE cumulative hazard exposure over the episode (ground truth used
-  here deliberately — "the world punishes risks you didn't know about")
+  agent's TRUE cumulative hazard exposure over the evacuation phase (ground truth used
+  here deliberately — "the world punishes risks you didn't know about").
+  *(Specification note: In Case 1 immediate evacuation, post-delay exposure equals total
+  cumulative exposure. In Case 2 delayed evacuation, Phase 9 is authoritative: R_terminal
+  scales with post-delay evacuation exposure to preserve policy learning gradients while
+  total cumulative exposure is logged separately in metrics).*
 
 - [ ] Log both `cumulative_true_exposure` and `cumulative_believed_exposure`
       per episode — you need both for the eval story in the report.
@@ -156,8 +160,8 @@ over multiple random seeds / start positions:
 - [ ] True cumulative hazard exposure (ground truth)
 - [ ] Time-to-exit (steps)
 - [ ] Time spent in high-crowd-density cells
-- [ ] Sweep: re-run all three methods across a grid of (σ, delay) values,
-      plot success rate / exposure vs. σ and vs. delay — THIS is your
+- [ ] Sweep: re-run all three methods across a grid of (sigma, delay) values,
+      plot success rate / exposure vs. sigma and vs. delay -- THIS is your
       differentiated headline result, make sure it's in the report.
 
 **Done when:** you have 3–4 clean comparison plots (bar charts for the main
@@ -198,25 +202,36 @@ GitHub link are at top.
 
 ---
 
-## Phase 9 — Bonus Extensions & Generalization (Post-Phase 8 Stretch)
+## Phase 9 — Final Three-Case Experiment Revision (Authoritative Specification)
 
-- [x] **Priority 1: Second Architectural Layout (`case2.txt`):**
-      Hand-authored multi-corridor $13 \times 36$ building layout with 4 exits,
-      central fire origin, internal rooms, bottlenecks, and alternative routes.
-      Added cross-layout evaluation protocol (evaluating `case1`-trained policies
-      on `case2.txt` zero-shot vs. retrained baseline).
-- [x] **Priority 2: Minimal Deep Q-Network (`src/agents/dqn_agent.py`):**
-      2-layer MLP (hidden dim 64) with fixed-size 14D relative observation vector,
-      experience replay buffer ($10^4$), target Q-network ($C=100$), Adam optimizer,
-      and epsilon-greedy exploration. Evaluated in-layout and cross-layout.
-- [x] **Priority 3: Configurable Crowd Panic & Herding (`CrowdSim`):**
-      Added parameterized `panic_prob` (local hazard-induced movement entropy) and
-      `herding_prob` (biasing movement toward fellow evacuee centroids), preserving
-      original baseline dynamics when disabled (0.0).
-- [x] **Comprehensive Testing & Evaluation Pipeline:**
-      Added 14 bonus unit tests (`tests/test_bonus.py`), bringing suite to 31 tests.
-      Generated cross-layout transfer and crowd dynamics CSV benchmarks and figures.
-      Updated 2-page research report (`report/report.tex`) with empirical findings.
+### 1. Three-Case Experimental Framework
+- [x] **Case 1: Original Layout, Immediate Evacuation (`layouts/case1.txt`, delay=0):**
+  - Evaluates immediate evacuation response upon fire ignition at $(4, 22)$.
+  - Primary comparison methods: (1) DQN, (2) Relative Tabular Q-learning, (3) Static Shortest Path, (4) Reactive Replanning.
+  - Outputs: `results/case1_eval_results.csv`, `results/case1_comparison.png`.
+- [x] **Case 2: Same Layout, Delayed Evacuation (`layouts/case1.txt`, chosen delay $t_{\text{delay}}=20$ steps):**
+  - Primary occupant remains stationary during delay while hazard expands and crowd advances.
+  - Delay does not consume the post-delay evacuation step budget ($T_{\text{max}}=200$).
+  - Separate exposure accounting: Total Exposure = Pre-Delay Exposure + Post-Delay Exposure (no double counting).
+  - Authoritative reward semantics: Terminal reward scaling uses post-delay evacuation exposure $E_{\text{post}}$ in $\max(0, 1 - E_{\text{post}})$ so passive pre-delay exposure does not nullify exit reward.
+  - Fresh Case 2 models trained with delay: `results/case2_qtable_relative.npy` and `results/case2_dqn_model.pt`.
+  - All four primary methods evaluated under identical conditions: `results/case2_eval_results.csv`, `results/case2_comparison.png`.
+- [x] **Case 3: Cross-Layout Generalization (Unseen `layouts/case2.txt`, zero retraining):**
+  - Tests zero-shot spatial transfer of Case 1-trained policies on a structurally distinct $13 \times 36$ layout with 4 exits and multi-wing corridors.
+  - All four primary methods evaluated without weight updates: `results/case3_cross_layout_results.csv`, `results/case3_cross_layout_comparison.png`.
+
+### 2. Delay Parameterization & Exposure Accounting
+- **Simulation Time Assumptions:** Under nominal assumptions of $\approx 1.0\text{ m}$ grid cell size and $\approx 1.0\text{ m/s}$ pedestrian speed, $1\text{ step} \approx 1\text{ s}$.
+- **Hazard Dynamics:** Sigmoid radial growth $r(t) = 20.0 / (1 + \exp(-0.05(t - 60)))$.
+  - At $t=0$, $r=0.95$ (only cell $(4, 22)$ active).
+  - At $t=20$, $r=2.38$ (hazard blocks central corridor, 12 cells contaminated, ~40% crowd evacuated).
+  - At $t=60$, $r=10.0$ (east exit blocked at hazard $\ge 0.30$).
+  - Chosen simulation delay $t_{\text{delay}}=20$ steps creates a challenging corridor bottleneck while maintaining route viability.
+- **Physical Calibration Disclaimer:** Physical calibration has not been validated against empirical fire egress experiments or real-world building evacuation trials; the synthetic radial hazard model is an abstract proxy rather than a physically validated Fractional Effective Dose (FED) model.
+
+### 3. Comprehensive Test Suite
+- [x] Renamed `tests/test_bonus.py` $\to$ `tests/test_extended_features.py` (39 tests total across suite).
+- [x] Added tests for zero-delay backward compatibility, stationary delay accumulation, crowd advancement during delay, step budget preservation, exposure separation, four primary methods evaluation, layout smoke execution, and trained Case 1 policy zero-shot transfer without weight mutation.
 
 ---
 

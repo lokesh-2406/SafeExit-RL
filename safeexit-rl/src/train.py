@@ -27,13 +27,14 @@ def main():
     parser.add_argument("--layout", default="layouts/case1.txt")
     parser.add_argument("--episodes", type=int, default=3000)
     parser.add_argument("--agent", choices=["q_learning", "dqn"], default="q_learning")
-    parser.add_argument("--state-mode", choices=["coordinate", "relative"], default="coordinate")
+    parser.add_argument("--state-mode", choices=["relative"], default="relative", help="Tabular state representation (relative local features)")
     parser.add_argument("--sensing-radius", type=int, default=2)
     parser.add_argument("--obs-noise-std", type=float, default=0.1)
     parser.add_argument("--obs-delay", type=int, default=2)
     parser.add_argument("--n-npcs", type=int, default=10)
     parser.add_argument("--panic-prob", type=float, default=0.0)
     parser.add_argument("--herding-prob", type=float, default=0.0)
+    parser.add_argument("--pre-evacuation-delay", type=int, default=0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default=None)
     parser.add_argument("--plot-out", default=None)
@@ -41,8 +42,8 @@ def main():
 
     os.makedirs("results", exist_ok=True)
 
-    out_path = args.out or ("results/qtable.npy" if args.agent == "q_learning" else "results/dqn_model.pt")
-    plot_path = args.plot_out or ("results/training_curve.png" if args.agent == "q_learning" else "results/dqn_training_curve.png")
+    out_path = args.out or ("results/qtable_relative.npy" if args.agent == "q_learning" else "results/dqn_model.pt")
+    plot_path = args.plot_out or ("results/training_curve_relative.png" if args.agent == "q_learning" else "results/dqn_training_curve.png")
 
     env = SafeExitEnv(
         layout_path=args.layout,
@@ -53,6 +54,7 @@ def main():
         seed=args.seed,
         panic_prob=args.panic_prob,
         herding_prob=args.herding_prob,
+        pre_evacuation_delay=args.pre_evacuation_delay,
     )
 
     if args.agent == "dqn":

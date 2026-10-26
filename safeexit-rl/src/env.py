@@ -263,7 +263,8 @@ class SafeExitEnv:
     def __init__(self, layout_path: str, sensing_radius: int = 2,
                  obs_noise_std: float = 0.1, obs_delay: int = 2,
                  n_npcs: int = 10, max_steps: int = 200, seed: Optional[int] = None,
-                 panic_prob: float = 0.0, herding_prob: float = 0.0):
+                 panic_prob: float = 0.0, herding_prob: float = 0.0,
+                 pre_evacuation_delay: int = 0):
         self.building = GridBuilding(layout_path)
         self.sensing_radius = sensing_radius
         self.obs_noise_std = obs_noise_std
@@ -272,23 +273,31 @@ class SafeExitEnv:
         self.max_steps = max_steps
         self.panic_prob = panic_prob
         self.herding_prob = herding_prob
+        self.pre_evacuation_delay = pre_evacuation_delay
         self.rng = np.random.default_rng(seed)
 
         self.hazard: Optional[HazardField] = None
         self.crowd: Optional[CrowdSim] = None
         self.t = 0
+        self.evacuation_steps = 0
         self.agent_pos = None
         self.visited = set()
         self.belief_state = {}       # agent's remembered hazard estimate per cell
         self.last_refresh = {}       # cell -> last timestep it was observed
         self.cumulative_true_exposure = 0.0
+        self.post_delay_exposure = 0.0
+        self.pre_delay_exposure = 0.0
         self.cumulative_believed_exposure = 0.0
 
     def reset(self, start_pos: Optional[tuple] = None) -> Observation:
         """Place agent, init HazardField at building.fire_origin,
-        init CrowdSim, reset counters, return initial Observation."""
+        init CrowdSim, reset counters, run optional pre-evacuation delay,
+        and return initial Observation at the start of evacuation."""
         self.t = 0
+        self.evacuation_steps = 0
         self.cumulative_true_exposure = 0.0
+        self.post_delay_exposure = 0.0
+        self.pre_delay_exposure = 0.0
         self.cumulative_believed_exposure = 0.0
         self.belief_state = {}
         self.last_refresh = {}
@@ -326,6 +335,16 @@ class SafeExitEnv:
             herding_prob=self.herding_prob,
         )
 
+        # If pre-evacuation delay is configured, primary occupant remains stationary
+        # while hazard expands, crowd advances, and stationary exposure accumulates.
+        if self.pre_evacuation_delay > 0:
+            for step_d in range(1, self.pre_evacuation_delay + 1):
+                self.t = step_d
+                haz = self.hazard.true_value(self.agent_pos, self.t)
+                self.pre_delay_exposure += haz
+                self.cumulative_true_exposure += haz
+                self.crowd.step(hazard=self.hazard, t=self.t)
+
         return self._build_observation()
 
     def step(self, action: str):
@@ -333,6 +352,7 @@ class SafeExitEnv:
         from src.reward import compute_reward, RewardWeights
 
         self.t += 1
+        self.evacuation_steps += 1
         weights = RewardWeights()
 
         # 1. Attempt to move agent
@@ -353,11 +373,12 @@ class SafeExitEnv:
         revisited = self.agent_pos in self.visited and moved
         self.visited.add(self.agent_pos)
 
-        # 2. Advance hazard field (time advances automatically) and crowd sim
+        # 2. Advance hazard field and crowd sim
         self.crowd.step(hazard=self.hazard, t=self.t)
 
-        # 3. Update cumulative true exposure using ground-truth hazard
+        # 3. Update exposures using ground-truth hazard
         true_haz = self.hazard.true_value(self.agent_pos, self.t)
+        self.post_delay_exposure += true_haz
         self.cumulative_true_exposure += true_haz
 
         # 4. Build observation (noisy/delayed/radius-limited)
@@ -367,16 +388,16 @@ class SafeExitEnv:
         believed_haz = self.belief_state.get(self.agent_pos, 0.0)
         self.cumulative_believed_exposure += believed_haz
 
-        # 6. Check done conditions
+        # 6. Check done conditions (pre-evacuation delay does not consume evacuation steps)
         reached_exit = self.building.is_exit(self.agent_pos)
-        timed_out = self.t >= self.max_steps
+        timed_out = self.evacuation_steps >= self.max_steps
         done = reached_exit or timed_out
 
         # 7. Compute crowd density at agent position
         density = self.crowd.density_grid()
         local_crowd = int(density[self.agent_pos[0], self.agent_pos[1]])
 
-        # 8. Compute reward
+        # 8. Compute reward (evaluated over post-delay evacuation performance)
         reward = compute_reward(
             moved=moved,
             revisited=revisited,
@@ -384,7 +405,7 @@ class SafeExitEnv:
             believed_hazard_at_cell=believed_haz,
             local_crowd_count=local_crowd,
             reached_exit=reached_exit,
-            cumulative_true_exposure=self.cumulative_true_exposure,
+            cumulative_true_exposure=self.post_delay_exposure,
             weights=weights,
         )
 
@@ -396,10 +417,15 @@ class SafeExitEnv:
             "true_hazard": true_haz,
             "believed_hazard": believed_haz,
             "cumulative_true_exposure": self.cumulative_true_exposure,
+            "total_exposure": self.cumulative_true_exposure,
+            "post_delay_exposure": self.post_delay_exposure,
+            "pre_delay_exposure": self.pre_delay_exposure,
             "cumulative_believed_exposure": self.cumulative_believed_exposure,
             "reached_exit": reached_exit,
             "timed_out": timed_out,
-            "steps": self.t,
+            "steps": self.evacuation_steps,
+            "evacuation_steps": self.evacuation_steps,
+            "simulation_time": self.t,
             "local_crowd": local_crowd,
         }
 

@@ -52,6 +52,8 @@ def run_episode(env, agent, agent_type="rl"):
     return {
         "success": info["reached_exit"],
         "true_exposure": info["cumulative_true_exposure"],
+        "post_delay_exposure": info.get("post_delay_exposure", info["cumulative_true_exposure"]),
+        "pre_delay_exposure": info.get("pre_delay_exposure", 0.0),
         "believed_exposure": info["cumulative_believed_exposure"],
         "steps": info["steps"],
         "high_crowd_steps": high_crowd_steps,
@@ -60,7 +62,7 @@ def run_episode(env, agent, agent_type="rl"):
 
 def evaluate_agent(agent, agent_type, layout_path, n_episodes, seeds,
                    obs_noise_std=0.1, obs_delay=2, sensing_radius=2, n_npcs=10,
-                   panic_prob=0.0, herding_prob=0.0):
+                   panic_prob=0.0, herding_prob=0.0, pre_evacuation_delay=0):
     """Evaluate an agent over multiple episodes/seeds, return aggregated metrics."""
     results = []
     for seed in seeds:
@@ -73,6 +75,7 @@ def evaluate_agent(agent, agent_type, layout_path, n_episodes, seeds,
             seed=seed,
             panic_prob=panic_prob,
             herding_prob=herding_prob,
+            pre_evacuation_delay=pre_evacuation_delay,
         )
         for _ in range(max(1, n_episodes // len(seeds))):
             metrics = run_episode(env, agent, agent_type)
@@ -84,16 +87,25 @@ def aggregate(results):
     """Compute mean metrics from a list of episode result dicts."""
     n = len(results)
     if n == 0:
-        return {"success_rate": 0, "avg_exposure": 0, "avg_steps": 0, "avg_crowd_time": 0}
+        return {
+            "success_rate": 0,
+            "avg_exposure": 0,
+            "post_delay_exposure": 0,
+            "pre_delay_exposure": 0,
+            "avg_steps": 0,
+            "avg_crowd_time": 0,
+        }
     return {
         "success_rate": sum(r["success"] for r in results) / n * 100,
         "avg_exposure": float(np.mean([r["true_exposure"] for r in results])),
+        "post_delay_exposure": float(np.mean([r.get("post_delay_exposure", r["true_exposure"]) for r in results])),
+        "pre_delay_exposure": float(np.mean([r.get("pre_delay_exposure", 0.0) for r in results])),
         "avg_steps": float(np.mean([r["steps"] for r in results])),
         "avg_crowd_time": float(np.mean([r["high_crowd_steps"] for r in results])),
     }
 
 
-def plot_comparison(all_metrics, save_path="results/comparison.png"):
+def plot_comparison(all_metrics, save_path="results/comparison.png", title=None):
     """Bar chart comparing methods across metrics."""
     methods = list(all_metrics.keys())
     metric_names = ["success_rate", "avg_exposure", "avg_steps", "avg_crowd_time"]
@@ -114,6 +126,8 @@ def plot_comparison(all_metrics, save_path="results/comparison.png"):
             ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                     f"{val:.1f}", ha='center', va='bottom', fontsize=8)
 
+    if title:
+        plt.suptitle(title, fontsize=13, fontweight='bold')
     plt.tight_layout()
     plt.savefig(save_path, dpi=150)
     plt.close()
@@ -122,9 +136,11 @@ def plot_comparison(all_metrics, save_path="results/comparison.png"):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", default="results/qtable.npy")
-    parser.add_argument("--dqn-checkpoint", default="results/dqn_model.pt")
+    parser.add_argument("--checkpoint", "--rel-checkpoint", dest="rel_checkpoint",
+                        default="results/qtable_relative.npy", help="Relative Tabular Q checkpoint (primary method)")
+    parser.add_argument("--dqn-checkpoint", default="results/dqn_model.pt", help="DQN checkpoint (primary method)")
     parser.add_argument("--layout", default="layouts/case1.txt")
+    parser.add_argument("--pre-evacuation-delay", type=int, default=0, help="Pre-evacuation delay steps")
     parser.add_argument("--n-eval-episodes", type=int, default=100)
     parser.add_argument("--n-seeds", type=int, default=5)
     parser.add_argument("--obs-noise-std", type=float, default=0.1)
@@ -133,6 +149,7 @@ def main():
     parser.add_argument("--herding-prob", type=float, default=0.0)
     parser.add_argument("--out-csv", default="results/eval_results.csv")
     parser.add_argument("--out-plot", default="results/comparison.png")
+    parser.add_argument("--title", default=None, help="Title for comparison plot")
     args = parser.parse_args()
 
     os.makedirs("results", exist_ok=True)
@@ -140,19 +157,8 @@ def main():
     n_ep = args.n_eval_episodes
     all_metrics = {}
 
-    # 1. Tabular RL Agent (if checkpoint exists)
-    if os.path.exists(args.checkpoint):
-        rl_agent = QLearningAgent(epsilon_start=0.0, epsilon_end=0.0)
-        rl_agent.load(args.checkpoint)
-        rl_results = evaluate_agent(rl_agent, "rl", args.layout, n_ep, seeds,
-                                    obs_noise_std=args.obs_noise_std,
-                                    obs_delay=args.obs_delay,
-                                    panic_prob=args.panic_prob,
-                                    herding_prob=args.herding_prob)
-        all_metrics["Tabular Q"] = aggregate(rl_results)
-
-    # 2. DQN Agent (if checkpoint exists)
-    if os.path.exists(args.dqn_checkpoint):
+    # 1. DQN Agent (Primary RL method)
+    if args.dqn_checkpoint and os.path.exists(args.dqn_checkpoint):
         from src.agents.dqn_agent import DQNAgent
         dqn_agent = DQNAgent()
         dqn_agent.load(args.dqn_checkpoint)
@@ -160,44 +166,62 @@ def main():
                                      obs_noise_std=args.obs_noise_std,
                                      obs_delay=args.obs_delay,
                                      panic_prob=args.panic_prob,
-                                     herding_prob=args.herding_prob)
-        all_metrics["DQN (ours)"] = aggregate(dqn_results)
+                                     herding_prob=args.herding_prob,
+                                     pre_evacuation_delay=args.pre_evacuation_delay)
+        all_metrics["DQN"] = aggregate(dqn_results)
 
-    # 3. Static shortest-path baseline
+    # 2. Relative Tabular Q-learning Agent (Primary tabular RL method)
+    if args.rel_checkpoint and os.path.exists(args.rel_checkpoint):
+        rel_agent = QLearningAgent(epsilon_start=0.0, epsilon_end=0.0,
+                                   state_mode="relative", unseen_action_fallback="exit_bearing")
+        rel_agent.load(args.rel_checkpoint)
+        rel_results = evaluate_agent(rel_agent, "rl", args.layout, n_ep, seeds,
+                                     obs_noise_std=args.obs_noise_std,
+                                     obs_delay=args.obs_delay,
+                                     panic_prob=args.panic_prob,
+                                     herding_prob=args.herding_prob,
+                                     pre_evacuation_delay=args.pre_evacuation_delay)
+        all_metrics["Relative Tabular Q"] = aggregate(rel_results)
+
+
+    # 3. Static shortest-path baseline (Primary baseline)
     sp_agent = StaticShortestPathAgent()
     sp_results = evaluate_agent(sp_agent, "static", args.layout, n_ep, seeds,
                                 obs_noise_std=args.obs_noise_std,
                                 obs_delay=args.obs_delay,
                                 panic_prob=args.panic_prob,
-                                herding_prob=args.herding_prob)
-    all_metrics["Static SP"] = aggregate(sp_results)
+                                herding_prob=args.herding_prob,
+                                pre_evacuation_delay=args.pre_evacuation_delay)
+    all_metrics["Static Shortest Path"] = aggregate(sp_results)
 
-    # 4. Reactive replanning baseline
+    # 4. Reactive replanning baseline (Primary baseline)
     rr_agent = ReactiveReplanAgent(replan_interval=5)
     rr_results = evaluate_agent(rr_agent, "reactive", args.layout, n_ep, seeds,
                                 obs_noise_std=args.obs_noise_std,
                                 obs_delay=args.obs_delay,
                                 panic_prob=args.panic_prob,
-                                herding_prob=args.herding_prob)
-    all_metrics["Reactive"] = aggregate(rr_results)
+                                herding_prob=args.herding_prob,
+                                pre_evacuation_delay=args.pre_evacuation_delay)
+    all_metrics["Reactive Replanning"] = aggregate(rr_results)
 
     # Print table
-    print(f"\n{'Method':<15} {'Success%':>10} {'Exposure':>10} {'Steps':>10} {'CrowdTime':>10}")
-    print("-" * 55)
+    print(f"\n{'Method':<25} {'Success%':>10} {'TotalExp':>10} {'PostDelayExp':>12} {'Steps':>10} {'CrowdTime':>10}")
+    print("-" * 80)
     for method, m in all_metrics.items():
-        print(f"{method:<15} {m['success_rate']:>10.1f} {m['avg_exposure']:>10.2f} "
-              f"{m['avg_steps']:>10.1f} {m['avg_crowd_time']:>10.1f}")
+        print(f"{method:<25} {m['success_rate']:>10.1f} {m['avg_exposure']:>10.2f} "
+              f"{m['post_delay_exposure']:>12.2f} {m['avg_steps']:>10.1f} {m['avg_crowd_time']:>10.1f}")
 
     # Plot
-    plot_comparison(all_metrics, save_path=args.out_plot)
+    plot_comparison(all_metrics, save_path=args.out_plot, title=args.title)
 
     # Save CSV
     import csv
     with open(args.out_csv, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["Method", "SuccessRate", "AvgExposure", "AvgSteps", "AvgCrowdTime"])
+        writer.writerow(["Method", "SuccessRate", "AvgExposure", "PostDelayExposure", "PreDelayExposure", "AvgSteps", "AvgCrowdTime"])
         for method, m in all_metrics.items():
             writer.writerow([method, f"{m['success_rate']:.1f}", f"{m['avg_exposure']:.2f}",
+                             f"{m['post_delay_exposure']:.2f}", f"{m['pre_delay_exposure']:.2f}",
                              f"{m['avg_steps']:.1f}", f"{m['avg_crowd_time']:.1f}"])
     print(f"Saved {args.out_csv}")
 
