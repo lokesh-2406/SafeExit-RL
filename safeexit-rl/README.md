@@ -35,7 +35,7 @@ safeexit-rl/
 ├── results/                       # Checkpoints, plots, and CSV results
 ├── tests/
 │   ├── test_env.py                # 17 core environment and reward tests
-│   └── test_bonus.py              # 14 bonus tests (Case 2, DQN, transfer, panic/herding)
+│   └── test_extended_features.py  # 21 extended tests (Case 3, DQN, delay, exposure, panic/herding)
 ├── PLAN.md                        # Phased project specification
 └── requirements.txt
 ```
@@ -58,6 +58,32 @@ $$r_t = w_1 R_{\text{progress}} + w_2 R_{\text{hazard}} + w_3 R_{\text{congestio
 
 ---
 
+## Three-Case Experimental Framework
+
+SafeExit-RL benchmarks four primary methods across three systematically contrasting experimental regimes:
+1. **DQN** (Deep Q-Network with 14-dim relative spatial/hazard features)
+2. **Relative Tabular Q-learning** (Coordinate-invariant tabular state discretization with exit-bearing fallback)
+3. **Static Shortest Path** (Offline BFS shortest-path baseline without replanning)
+4. **Reactive Replanning** (Periodic online Dijkstra replanning based on local belief state)
+
+*(Note: Coordinate-based Tabular Q-learning is evaluated strictly as an ablative baseline demonstrating spatial memorization and transfer collapse).*
+
+| Regime | Layout | Pre-Evacuation Delay ($t_{\text{delay}}$) | Description & Focus |
+| :--- | :--- | :---: | :--- |
+| **Case 1** | `layouts/case1.txt` | 0 steps (Immediate) | Immediate evacuation upon fire ignition. Evaluates baseline egress policy performance and noise tolerance. |
+| **Case 2** | `layouts/case1.txt` | 20 steps (~20s Delayed) | Delayed response where occupant remains stationary while fire expands and crowd advances. Evaluates dynamic resilience under severe corridor contamination. |
+| **Case 3** | `layouts/case2.txt` | 0 steps (Cross-Layout) | Zero-shot transfer of Case 1-trained policies to an unseen, structurally distinct building ($13 \times 36$, 4 exits) without retraining. |
+
+### Delay Calibration & Exposure Accounting
+- **Simulation Time Semantics**: Grid cells represent $1.0\text{ m} \times 1.0\text{ m}$ spacing. Pedestrian movement speed $\approx 1.0\text{ m/s} \implies 1\text{ simulation step} \approx 1\text{ second}$. Egress in Case 1 typically takes 10–18 seconds.
+- **Physical Interpretation of Delay**: At $t_{\text{delay}} = 20\text{ s}$, the hazard radius has expanded from $0.95\text{ m}$ to $2.38\text{ m}$, heavily contaminating the central corridor and causing ~40% of simulated NPCs to evacuate. At $t \ge 60\text{ s}$, the eastern exit becomes blocked ($\ge 0.30$ hazard). Thus, $t=20\text{ s}$ constitutes a rigorous, calibrated bottleneck without making escape physically impossible.
+- **Exposure Metric Separation**: Total exposure accumulated from ignition is partitioned into:
+  $$\text{Total Exposure} = E_{\text{pre-delay}} + E_{\text{post-delay}}$$
+  Terminal exit reward uses $E_{\text{post-delay}}$ in $\max(0, 1 - E_{\text{post-delay}})$ to maintain reinforcement gradients, while both metrics are explicitly tracked without double-counting.
+- **Synthetic Hazard vs. Physical FED**: The synthetic sigmoidal radial model serves as an abstract proxy for smoke/thermal exposure and is not a computational fluid dynamics (CFD/FDS) Fractional Effective Dose calculation.
+
+---
+
 ## Setup & Quickstart
 
 ### 1. Installation
@@ -75,39 +101,37 @@ pip install -r requirements.txt
 ```bash
 python -m pytest -v
 ```
-*(31 comprehensive unit tests covering grid parsing, hazard monotonicity, crowd movement, noise/staleness, reward signs, DQN training/replay, Case 2 connectivity, and crowd panic/herding).*
+*(38 comprehensive unit tests covering grid parsing, hazard monotonicity, crowd movement, noise/staleness, reward signs, DQN training/replay, Case 3 connectivity, panic/herding, delay backward compatibility, stationary delay accounting, and zero-shot transfer).*
 
-### 3. Train RL Agents
-**Tabular Q-Learning (Case 1, coordinate state):**
+### 3. Case 1: Original Layout, Immediate Evacuation
+**Evaluate Case 1 Primary Methods:**
 ```bash
-python -m src.train --layout layouts/case1.txt --agent q_learning --episodes 3000 --seed 42 --out results/qtable.npy
+python -m src.evaluate --layout layouts/case1.txt --pre-evacuation-delay 0 --rel-checkpoint results/qtable_relative.npy --dqn-checkpoint results/dqn_model.pt --out-csv results/case1_eval_results.csv --out-plot results/case1_comparison.png --title "Case 1: Immediate Evacuation (Original Layout)"
+```
+Outputs: `results/case1_eval_results.csv`, `results/case1_comparison.png`.
+
+### 4. Case 2: Same Layout, Delayed Evacuation ($t_{\text{delay}} = 20$)
+**Train fresh Case 2 models under delay:**
+```bash
+# Relative Tabular Q-learning
+python -m src.train --layout layouts/case1.txt --agent q_learning --state-mode relative --pre-evacuation-delay 20 --episodes 1500 --seed 42 --out results/case2_qtable_relative.npy --plot-out results/case2_training_curve_relative.png
+
+# Deep Q-Network
+python -m src.train --layout layouts/case1.txt --agent dqn --pre-evacuation-delay 20 --episodes 800 --seed 42 --out results/case2_dqn_model.pt --plot-out results/case2_dqn_training_curve.png
 ```
 
-**Tabular Q-Learning (Case 1, relative state):**
+**Evaluate Case 2 Primary Methods:**
 ```bash
-python -m src.train --layout layouts/case1.txt --agent q_learning --state-mode relative --episodes 1500 --seed 42 --out results/qtable_relative.npy
+python -m src.evaluate --layout layouts/case1.txt --pre-evacuation-delay 20 --rel-checkpoint results/case2_qtable_relative.npy --dqn-checkpoint results/case2_dqn_model.pt --out-csv results/case2_eval_results.csv --out-plot results/case2_comparison.png --title "Case 2: Delayed Evacuation (t_delay=20, Same Layout)"
 ```
+Outputs: `results/case2_eval_results.csv`, `results/case2_comparison.png`.
 
-**Deep Q-Network (Case 1, 14-dim relative features):**
+### 5. Case 3: Cross-Layout Generalization (Unseen Layout)
+**Evaluate Case 1 policies zero-shot on Case 3 layout (`layouts/case2.txt`):**
 ```bash
-python -m src.train --layout layouts/case1.txt --agent dqn --episodes 800 --seed 42 --out results/dqn_model.pt
+python -m experiments.eval_cross_layout --layout layouts/case2.txt --dqn-checkpoint results/dqn_model.pt --rel-checkpoint results/qtable_relative.npy --out-csv results/case3_cross_layout_results.csv --out-plot results/case3_cross_layout_comparison.png
 ```
-
-### 4. Evaluate In-Layout Benchmarks
-```bash
-python -m src.evaluate --checkpoint results/qtable.npy --dqn-checkpoint results/dqn_model.pt --layout layouts/case1.txt --n-eval-episodes 100
-```
-Outputs:
-- Comparison plot: `results/comparison.png`
-- Summary data: `results/eval_results.csv`
-
-### 5. Evaluate Cross-Layout Generalization (Case 1 -> Case 2)
-```bash
-python -m experiments.eval_cross_layout --layout layouts/case2.txt --n-eval-episodes 100
-```
-Outputs:
-- Cross-layout comparison plot: `results/cross_layout_comparison.png`
-- Summary data: `results/cross_layout_results.csv`
+Outputs: `results/case3_cross_layout_results.csv`, `results/case3_cross_layout_comparison.png`.
 
 ### 6. Reproduce Noise & Latency Sensitivity Sweep
 ```bash
@@ -129,39 +153,36 @@ Outputs:
 
 ## Experimental Results
 
-### 1. In-Layout Benchmark (Case 1, $\sigma = 0.1, \tau = 2$)
-| Method | Success % | True Exposure | Steps to Exit | High-Crowd Steps |
-| :--- | :---: | :---: | :---: | :---: |
-| **Tabular Q (Ours)** | 99.0% | 1.41 | 17.8 | 0.2 |
-| **DQN (Ours)** | **100.0%** | **0.05** | 13.6 | 0.1 |
-| **Static Shortest-Path** | 100.0% | 0.13 | 9.4 | 0.1 |
-| **Reactive Replanning** | 100.0% | 0.12 | 10.1 | 0.1 |
+### 1. Case 1 — Immediate Evacuation (\layouts/case1.txt\, \text{delay} = 0$)
+| Primary Method | Success % | Total Exposure | Post-Delay Exposure | Evacuation Steps | High-Crowd Steps |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **DQN (Ours)** | **100.0%** | **0.08** | **0.08** | 17.4 | 0.1 |
+| **Relative Tabular Q** | 100.0% | 0.33 | 0.33 | 23.9 | 0.1 |
+| **Static Shortest Path** | 100.0% | 0.13 | 0.13 | 9.4 | 0.1 |
+| **Reactive Replanning** | 100.0% | 0.12 | 0.12 | 10.1 | 0.1 |
 
-*Takeaway:* DQN reduces cumulative hazard exposure by 96% compared to tabular Q-learning and cuts step count from 17.8 to 13.6, demonstrating superior value function smoothing over continuous hazard and bearing estimates.
+*Takeaway:* DQN achieves the lowest cumulative hazard exposure across all methods (0.08), maintaining safe standoff distances from expanding hazard while smoothly routing around evacuee congestion.
 
-### 2. Cross-Layout Generalization (Case 2, $13 \times 36$, 4 exits)
-Policies trained exclusively on Case 1 deployed directly on Case 2 without retraining:
+### 2. Case 2 — Delayed Evacuation (\layouts/case1.txt\, \text{delay} = 20$)
+| Primary Method | Success % | Total Exposure | Post-Delay Exposure | Evacuation Steps | High-Crowd Steps |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **DQN (Ours)** | **100.0%** | **0.39** | **0.06** | 14.9 | 0.0 |
+| **Relative Tabular Q** | 89.0% | 4.88 | 4.66 | 35.8 | 0.0 |
+| **Static Shortest Path** | 100.0% | 0.38 | 0.23 | 9.5 | 0.0 |
+| **Reactive Replanning** | 95.0% | 9.91 | 9.69 | 19.8 | 0.1 |
 
-| Method | Success % | True Exposure | Steps to Exit | Notes |
-| :--- | :---: | :---: | :---: | :--- |
-| **Tabular Q (Coordinate)** | 12.0% | 53.52 | 177.6 | Overfits to absolute grid coordinates |
-| **Tabular Q (Relative)** | 24.0% | 57.19 | 153.4 | Invariant to coordinates; limited by discrete binning |
-| **DQN (Relative 14D)** | **37.0%** | **42.20** | **130.5** | Continuous relative features improve zero-shot transfer |
-| **Static SP (Global)** | 100.0% | 0.03 | 10.7 | Fresh BFS path over full floor plan |
-| **Reactive (Global)** | 99.0% | 1.83 | 12.9 | Periodic BFS replan over full floor plan |
-| *Tabular Q (Retrained on Case 2)* | *90.0%* | *14.80* | *42.1* | *Calibrates layout reachability* |
+*Takeaway:* Under a 20-step pre-evacuation delay, hazard engulfs the central corridor. Reactive replanning suffers severely (9.91 exposure, 95% success) due to belief staleness and local oscillation. DQN proves remarkably resilient, achieving 100% success and a post-delay exposure of just 0.06 (lower than Static Shortest Path's 0.23).
 
-*Takeaway:* Absolute coordinate representations cannot transfer across layouts (success drops to 12.0%). Relative feature representations double (24.0%) and triple (37.0% for DQN) zero-shot transfer performance, though global graph search remains superior for topological pathfinding in unseen buildings.
+### 3. Case 3 — Cross-Layout Generalization (\layouts/case2.txt\, Zero Retraining)
+| Primary Method | Success % | Total Exposure | Evacuation Steps | High-Crowd Steps | Notes |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **DQN (Ours)** | **25.0%** | 48.42 | 151.9 | 0.6 | Continuous 14D relative state transfer |
+| **Relative Tabular Q** | 24.0% | 57.19 | 153.4 | 0.0 | Discrete relative state transfer |
+| **Static Shortest Path** | 100.0% | 0.03 | 10.7 | 0.0 | Global topology BFS baseline |
+| **Reactive Replanning** | 99.0% | 1.83 | 12.9 | 0.0 | Global topology periodic replanning |
+| *Tabular Q (Coordinate - Ablation)* | *10.0%* | *47.93* | *180.9* | *0.1* | *Overfits to Case 1 grid coordinates* |
 
-### 3. Noise Sensitivity Sweep ($\sigma \in [0.0, 0.3]$, delay $\tau = 2$)
-| Noise Level ($\sigma$) | Tabular Q SR (Exp) | DQN SR (Exp) | Static SP SR (Exp) | Reactive Replan SR (Exp) |
-| :---: | :---: | :---: | :---: | :---: |
-| $\sigma = 0.0$ | 100.0% (0.09) | 100.0% (0.09) | 100.0% (0.14) | 100.0% (0.11) |
-| $\sigma = 0.1$ | 97.9% (2.92) | 100.0% (0.01) | 100.0% (0.16) | 100.0% (0.13) |
-| $\sigma = 0.2$ | 100.0% (0.06) | 100.0% (0.19) | 97.9% (1.91) | 97.9% (3.90) |
-| $\sigma = 0.3$ | 95.8% (3.39) | **97.9% (2.59)** | **87.5% (3.74)** | **97.9% (4.21)** |
-
-*Takeaway:* Under heavy sensor noise ($\sigma = 0.3$), classical deterministic shortest path degrades to 87.5% success with high cumulative exposure (3.74). Learned RL agents maintain $\ge 95.8\%$ success.
+*Takeaway:* Relative state representations (Relative Tabular Q at 24% and DQN at 25%) achieve 2.5x higher success rates than coordinate memorization (10%), successfully navigating local corridors via exit bearing. Classical baselines leverage full topological maps to find global paths, underscoring the distinction between local perception-action RL and global graph search in unseen environments.
 
 ---
 
