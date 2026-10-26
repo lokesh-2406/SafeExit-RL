@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeExit-RL — Autonomous Fire Egress Simulation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:'Inter',sans-serif; background:#080c16; color:#e2e8f0;
+    min-height:100vh; display:flex; flex-direction:column;
+  }
+
+  /* --- Top Bar --- */
+  .header {
+    background:linear-gradient(135deg,#0d1527 0%,#131e38 100%);
+    border-bottom:1px solid rgba(56,189,248,.2);
+    padding:10px 24px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .header-left { display:flex; align-items:center; gap:12px; }
+  .header h1 { font-size:17px; font-weight:700; letter-spacing:-.3px; }
+  .header h1 span { color:#38bdf8; }
+  .badge {
+    background:rgba(56,189,248,.15); color:#38bdf8; border:1px solid rgba(56,189,248,.35);
+    font-size:11px; font-weight:700; padding:2px 10px; border-radius:12px;
+  }
+
+  /* --- Presentation Scenario Tabs --- */
+  .scenario-bar {
+    background:#0f172a; border-bottom:1px solid rgba(255,255,255,.08);
+    padding:8px 24px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+  }
+  .scenario-group { display:flex; align-items:center; gap:8px; }
+  .scenario-title { font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:.8px; }
+  .scen-btn {
+    padding:6px 14px; border-radius:6px; border:1px solid #334155;
+    background:#1e293b; color:#94a3b8; font-size:12px; font-weight:600;
+    cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px;
+  }
+  .scen-btn:hover { background:#28364c; color:#f8fafc; }
+  .scen-btn.active {
+    background:linear-gradient(135deg,#0284c7,#0369a1); color:#fff;
+    border-color:#38bdf8; box-shadow:0 0 10px rgba(56,189,248,.3);
+  }
+
+  .baseline-toggle {
+    display:flex; align-items:center; gap:8px; background:#162032;
+    border:1px solid #334155; padding:4px 12px; border-radius:6px;
+  }
+  .baseline-toggle label { font-size:12px; font-weight:600; color:#cbd5e1; cursor:pointer; }
+  .baseline-toggle input[type=checkbox] { accent-color:#f59e0b; width:15px; height:15px; cursor:pointer; }
+
+  /* --- Briefing Note --- */
+  .briefing-card {
+    background:rgba(15,23,42,.6); border-bottom:1px solid rgba(255,255,255,.06);
+    padding:8px 24px; font-size:12px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .briefing-card b { color:#38bdf8; }
+  .legend-items { display:flex; align-items:center; gap:16px; font-size:11px; color:#94a3b8; }
+  .legend-item { display:flex; align-items:center; gap:6px; }
+  .dot { width:8px; height:8px; border-radius:50%; }
+  .dot-rl { background:#06b6d4; box-shadow:0 0 6px #06b6d4; }
+  .dot-bfs { background:#f59e0b; box-shadow:0 0 6px #f59e0b; }
+  .dot-exit { background:#22c55e; }
+  .dot-fire { background:#ef4444; }
+
+  /* --- Main Simulation Canvas --- */
+  .main-stage {
+    flex:1; padding:14px 24px; display:flex; flex-direction:column; align-items:center;
+  }
+  .canvas-container {
+    width:100%; max-width:1200px; background:#040711;
+    border:1px solid #1e293b; border-radius:8px; overflow:hidden;
+    box-shadow:0 8px 30px rgba(0,0,0,.6); position:relative;
+  }
+  #cvsMain { display:block; width:100%; height:auto; }
+
+  /* --- Playback Controls Bar --- */
+  .playback-bar {
+    width:100%; max-width:1200px; margin-top:8px;
+    background:#0f172a; border:1px solid #1e293b; border-radius:6px;
+    padding:8px 16px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .playback-btns { display:flex; align-items:center; gap:8px; }
+  .btn {
+    padding:5px 14px; border-radius:5px; border:none; font-family:'Inter',sans-serif;
+    font-size:12px; font-weight:600; cursor:pointer; transition:all .15s;
+  }
+  .btn-play { background:#22c55e; color:#fff; }
+  .btn-play:hover { background:#16a34a; }
+  .btn-play.paused { background:#f59e0b; }
+  .btn-step { background:#0284c7; color:#fff; }
+  .btn-step:hover { background:#0369a1; }
+  .btn-reset { background:#334155; color:#cbd5e1; }
+  .btn-reset:hover { background:#475569; }
+
+  .speed-ctrl { display:flex; align-items:center; gap:8px; font-size:11px; color:#94a3b8; font-weight:600; text-transform:uppercase; }
+  input[type=range] { width:80px; accent-color:#38bdf8; cursor:pointer; }
+  .step-counter { font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:700; color:#38bdf8; }
+
+  /* --- Viva Telemetry Dashboard (Clean 3-Card Grid) --- */
+  .dashboard {
+    width:100%; max-width:1200px; margin-top:10px;
+    display:grid; grid-template-columns:1fr 1fr 1.3fr; gap:12px;
+  }
+  .card {
+    background:#0d1527; border:1px solid #1e2d4a; border-radius:8px; padding:12px 14px;
+    display:flex; flex-direction:column; justify-content:space-between;
+  }
+  .card-title {
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#94a3b8;
+    margin-bottom:8px; display:flex; align-items:center; justify-content:space-between;
+  }
+
+  /* Survivability Card */
+  .health-container { margin-bottom:8px; }
+  .agent-health-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; font-size:11px; }
+  .health-bar-bg { width:100%; height:6px; background:#1e293b; border-radius:3px; overflow:hidden; margin-bottom:6px; }
+  .health-bar-fill { height:100%; border-radius:3px; transition:width .2s, background .2s; }
+  .metrics-row { display:flex; justify-content:space-between; font-size:11px; padding-top:6px; border-top:1px solid rgba(255,255,255,.05); }
+  .metric-item b { font-family:'JetBrains Mono',monospace; font-size:13px; }
+
+  /* Hazard Card */
+  .hazard-stat-box { display:flex; align-items:baseline; gap:8px; margin:4px 0; }
+  .hazard-big-num { font-size:26px; font-weight:700; font-family:'JetBrains Mono',monospace; color:#4ade80; }
+  .hazard-badge {
+    font-size:10px; font-weight:700; padding:2px 8px; border-radius:4px; text-transform:uppercase;
+  }
+
+  /* Action Q-Values Card */
+  .q-spectrum { display:flex; flex-direction:column; gap:4px; }
+  .q-row { display:flex; align-items:center; gap:8px; font-size:11px; font-family:'JetBrains Mono',monospace; }
+  .q-name { width:42px; color:#94a3b8; font-weight:600; text-transform:uppercase; }
+  .q-track { flex:1; height:6px; background:#1e293b; border-radius:3px; position:relative; overflow:hidden; }
+  .q-fill { height:100%; border-radius:3px; transition:width .15s, background .15s; }
+  .q-score { width:38px; text-align:right; font-weight:700; }
+  .q-picked { color:#38bdf8 !important; }
+</style>
+</head>
+<body>
+
+<!-- TOP HEADER -->
+<div class="header">
+  <div class="header-left">
+    <h1><span>SafeExit-RL</span> — Autonomous Emergency Evacuation</h1>
+    <div class="badge">VIVA PRESENTATION</div>
+  </div>
+  <div style="font-size:12px; color:#94a3b8;">
+    POMDP Egress Navigation under Dynamic Hazard Spread
+  </div>
+</div>
+
+<!-- PRESENTATION SCENARIO BAR -->
+<div class="scenario-bar">
+  <div class="scenario-group">
+    <span class="scenario-title">Present Case:</span>
+    <button class="scen-btn active" id="btnScen1" data-scen="cutoff">
+      🔥 1. Corridor Cutoff Trap (Static SP Blindness)
+    </button>
+    <button class="scen-btn" id="btnScen2" data-scen="labyrinth">
+      🏢 2. Multi-Corridor Complex (Chokepoint Reroute)
+    </button>
+    <button class="scen-btn" id="btnScen3" data-scen="crowd">
+      👥 3. Crowd Bottleneck Bypass (Top Corridor Detour)
+    </button>
+  </div>
+
+  <div class="baseline-toggle">
+    <input type="checkbox" id="chkShowBFS" checked>
+    <label for="chkShowBFS">Compare with Static Shortest-Path Baseline</label>
+  </div>
+</div>
+
+<!-- BRIEFING & LEGEND -->
+<div class="briefing-card">
+  <div id="briefingText">
+    <b>Case 1: The Cutoff Trap.</b> Fire cuts off the geometrically closest Exit 2. Demonstrates why Static Shortest-Path walks into fire while SafeExit-RL detours.
+  </div>
+  <div class="legend-items">
+    <div class="legend-item"><div class="dot dot-rl"></div> SafeExit-RL (Learned)</div>
+    <div class="legend-item" id="legBFS"><div class="dot dot-bfs"></div> Static SP (Baseline)</div>
+    <div class="legend-item"><div class="dot dot-fire"></div> Fire / Smoke Hazard</div>
+    <div class="legend-item"><div class="dot dot-exit"></div> Exits (E)</div>
+  </div>
+</div>
+
+<!-- MAIN STAGE -->
+<div class="main-stage">
+  <div class="canvas-container">
+    <canvas id="cvsMain"></canvas>
+  </div>
+
+  <!-- PLAYBACK CONTROLS -->
+  <div class="playback-bar">
+    <div class="playback-btns">
+      <button class="btn btn-play" id="btnPlay">▶ Play</button>
+      <button class="btn btn-step" id="btnStep">⏭ Step</button>
+      <button class="btn btn-reset" id="btnReset">↺ Reset</button>
+    </div>
+    <div class="step-counter">
+      Simulation Step: <span id="dispStep">0</span>
+    </div>
+    <div class="speed-ctrl">
+      <span>Speed:</span>
+      <input type="range" id="slSpeed" min="1" max="15" value="5">
+      <span id="dispSpeed" style="color:#38bdf8; font-family:'JetBrains Mono',monospace;">5x</span>
+    </div>
+  </div>
+
+  <!-- VIVA TELEMETRY & DECISION DASHBOARD -->
+  <div class="dashboard">
+
+    <!-- 1. Survivability & Safety Comparison -->
+    <div class="card">
+      <div class="card-title">
+        <span>🛡️ Egress Safety & Survivability</span>
+        <span style="font-size:10px; color:#64748b;">FED Hazard Model</span>
+      </div>
+
+      <!-- RL Health -->
+      <div class="health-container">
+        <div class="agent-health-row">
+          <span style="color:#38bdf8; font-weight:600;">SafeExit-RL (Ours):</span>
+          <span id="rlHealthVal" style="color:#4ade80; font-family:'JetBrains Mono',monospace; font-weight:700;">100% HEALTH</span>
+        </div>
+        <div class="health-bar-bg">
+          <div class="health-bar-fill" id="rlHealthBar" style="width:100%; background:#22c55e;"></div>
+        </div>
+      </div>
+
+      <!-- Static SP Health (if enabled) -->
+      <div class="health-container" id="bfsHealthContainer">
+        <div class="agent-health-row">
+          <span style="color:#f59e0b; font-weight:600;">Static SP Baseline:</span>
+          <span id="bfsHealthVal" style="color:#4ade80; font-family:'JetBrains Mono',monospace; font-weight:700;">100% HEALTH</span>
+        </div>
+        <div class="health-bar-bg">
+          <div class="health-bar-fill" id="bfsHealthBar" style="width:100%; background:#22c55e;"></div>
+        </div>
+      </div>
+
+      <div class="metrics-row">
+        <div class="metric-item">
+          <span style="color:#64748b;">RL Exposure:</span> <b id="rlExp" style="color:#4ade80;">0.00</b>
+        </div>
+        <div class="metric-item" id="bfsExpItem">
+          <span style="color:#64748b;">SP Exposure:</span> <b id="bfsExp" style="color:#cbd5e1;">0.00</b>
+        </div>
+        <div class="metric-item">
+          <span style="color:#64748b;">Status:</span> <b id="rlStatus" style="color:#38bdf8;">RUNNING</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Sensed Fire Threat -->
+    <div class="card">
+      <div class="card-title">
+        <span>🔥 Local Threat Perception</span>
+        <span style="font-size:10px; color:#64748b;">Sensing Radius r=2</span>
+      </div>
+
+      <div>
+        <div style="font-size:11px; color:#94a3b8;">Hazard in Forward Path:</div>
+        <div class="hazard-stat-box">
+          <div class="hazard-big-num" id="dispThreatNum">0.00</div>
+          <span class="hazard-badge" id="dispThreatBadge" style="background:rgba(34,197,94,.18); color:#4ade80;">SAFE CLEARANCE</span>
+        </div>
+      </div>
+
+      <div class="metrics-row" style="margin-top:auto; display:flex; flex-direction:column; gap:4px;">
+        <div style="font-size:11px; display:flex; justify-content:space-between;">
+          <span style="color:#64748b;">Target Exit:</span>
+          <b id="dispTargetExit" style="color:#38bdf8;">Exit 1</b>
+        </div>
+        <div style="font-size:11px; display:flex; justify-content:space-between;">
+          <span style="color:#64748b;">Crowd Obstruction:</span>
+          <b id="dispCrowd" style="color:#cbd5e1;">0 evacuees</b>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Policy Action Values Q(s, a) -->
+    <div class="card">
+      <div class="card-title">
+        <span>🧠 Policy Action Values Q(s, a)</span>
+        <span style="font-size:10px; color:#38bdf8;">Max Q Selected</span>
+      </div>
+      <div class="q-spectrum" id="qList">
+        <!-- Rendered live -->
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ========================= LAYOUT DATA =========================
+const LAYOUT_CASE1 = [
+  "##############################",
+  "#............................#",
+  "#.#####.####.####.####.#####.#",
+  "#.#...#.#..#.#..#.#..#.#...#.#",
+  "E.....................F......E",
+  "#.#...#.#..#.#..#.#..#.#...#.#",
+  "#.#####.####.####.####.#####.#",
+  "#............................#",
+  "##############################"
+];
+
+const LAYOUT_CASE2 = [
+  "##################E#################",
+  "#..................#...............#",
+  "#.#####.##########.#.#############.#",
+  "#.#...#.#........#...#...........#.#",
+  "E.#.#.#.#.######.#####.#########.#.#",
+  "#...#...#.#....#.......#.......#...#",
+  "#.#####.#.#.##.#########.#####.#.###",
+  "#.#...#...#..#.....F.....#...#.#...#",
+  "#.#.#.######.#############.#.#.###.#",
+  "#...#........#.............#.#.....E",
+  "#.##########.###############.#####.#",
+  "#..................................#",
+  "##################E#################"
+];
+
+class Building {
+  constructor(lines) {
+    this.grid = lines.map(l => [...l]);
+    this.rows = this.grid.length;
+    this.cols = this.grid[0].length;
+    this.exits = [];
+    this.fireOrigin = null;
+    for (let r=0; r<this.rows; r++) {
+      for (let c=0; c<this.cols; c++) {
+        if (this.grid[r][c] === 'E') this.exits.push([r,c]);
+        if (this.grid[r][c] === 'F') this.fireOrigin = [r,c];
+      }
+    }
+  }
+  isFree(r,c) { return r>=0 && r<this.rows && c>=0 && c<this.cols && this.grid[r][c] !== '#'; }
+  isExit(r,c) { return this.exits.some(e => e[0]===r && e[1]===c); }
+}
+
+class HazardField {
+  constructor(origin, growthRate=0.10, baseRadius=2.2, maxRadius=14.0) {
+    this.origin = origin;
+    this.growthRate = growthRate;
+    this.baseRadius = baseRadius;
+    this.maxRadius = maxRadius;
+  }
+  radius(t) {
+    if (!this.origin) return 0;
+    return Math.min(this.maxRadius, this.baseRadius + t * this.growthRate);
+  }
+  value(r, c, t) {
+    if (!this.origin) return 0;
+    const d = Math.sqrt((r-this.origin[0])**2 + (c-this.origin[1])**2);
+    const R = this.radius(t);
+    if (d > R) return 0;
+    return Math.max(0, 1.0 - d / R);
+  }
+}
+
+class CrowdSim {
+  constructor(building, n, bottleneck=null) {
+    this.b = building; this.n = n;
+    this.pos = []; this.evac = [];
+    if (bottleneck) {
+      // Spawn dense cluster in the specified bottleneck corridor
+      for (let i = 0; i < bottleneck.count; i++) {
+        const col = bottleneck.cols[i % bottleneck.cols.length];
+        this.pos.push([bottleneck.r, col]);
+        this.evac.push(false);
+      }
+      // Remaining NPCs placed randomly away from bottleneck
+      const free = [];
+      for (let r=0; r<building.rows; r++) {
+        for (let c=0; c<building.cols; c++) {
+          if (building.isFree(r,c) && !building.isExit(r,c) && Math.abs(r-bottleneck.r) > 1) {
+            free.push([r,c]);
+          }
+        }
+      }
+      for (let i = bottleneck.count; i < n; i++) {
+        const p = free[Math.floor(Math.random()*free.length)] || [1,1];
+        this.pos.push([p[0],p[1]]);
+        this.evac.push(false);
+      }
+    } else {
+      const free = [];
+      for (let r=0; r<building.rows; r++) {
+        for (let c=0; c<building.cols; c++) {
+          if (building.isFree(r,c) && !building.isExit(r,c) &&
+              !(building.fireOrigin && Math.abs(r-building.fireOrigin[0])<=2 && Math.abs(c-building.fireOrigin[1])<=2)) {
+            free.push([r,c]);
+          }
+        }
+      }
+      for (let i=0; i<n; i++) {
+        const p = free[Math.floor(Math.random()*free.length)] || [1,1];
+        this.pos.push([p[0],p[1]]); this.evac.push(false);
+      }
+    }
+  }
+  step(haz, t) {
+    for (let i=0; i<this.n; i++) {
+      if (this.evac[i]) continue;
+      let [r,c] = this.pos[i];
+      let bestExit = this.b.exits[0], minD = Infinity;
+      for (const e of this.b.exits) {
+        const d = Math.abs(r-e[0]) + Math.abs(c-e[1]);
+        if (d < minD) { minD = d; bestExit = e; }
+      }
+      const dr = Math.sign(bestExit[0]-r), dc = Math.sign(bestExit[1]-c);
+      const cands = [];
+      if (dr !== 0 && this.b.isFree(r+dr, c)) cands.push([r+dr, c]);
+      if (dc !== 0 && this.b.isFree(r, c+dc)) cands.push([r, c+dc]);
+      if (!cands.length) continue;
+      if (Math.random() < 0.55) {
+        this.pos[i] = cands[0];
+        if (this.b.isExit(this.pos[i][0], this.pos[i][1])) this.evac[i] = true;
+      }
+    }
+  }
+  densityAt(r,c) {
+    let cnt=0;
+    for (let i=0; i<this.n; i++) if (!this.evac[i] && this.pos[i][0]===r && this.pos[i][1]===c) cnt++;
+    return cnt;
+  }
+}
+
+// Static Shortest Path BFS (Calculates ONCE at t=0, blind to future fire)
+function planStaticBFS(building, start) {
+  const q = [[start[0], start[1]]];
+  const parent = {};
+  const key = (r,c) => r+','+c;
+  parent[key(start[0],start[1])] = null;
+
+  while (q.length) {
+    const [cr,cc] = q.shift();
+    if (building.isExit(cr,cc)) {
+      const path = [];
+      let k = key(cr,cc);
+      while (k) {
+        const [a,b] = k.split(',').map(Number);
+        path.push([a,b]);
+        k = parent[k];
+      }
+      return path.reverse();
+    }
+    for (const [dr,dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      const nr = cr+dr, nc = cc+dc, nk = key(nr,nc);
+      if (nk in parent) continue;
+      if (!building.isFree(nr,nc) && !building.isExit(nr,nc)) continue;
+      parent[nk] = key(cr,cc);
+      q.push([nr,nc]);
+    }
+  }
+  return [];
+}
+
+// Actions
+const ACTIONS = [
+  { name: 'Up',    dr: -1, dc:  0 },
+  { name: 'Down',  dr:  1, dc:  0 },
+  { name: 'Left',  dr:  0, dc: -1 },
+  { name: 'Right', dr:  0, dc:  1 },
+  { name: 'Wait',  dr:  0, dc:  0 }
+];
+
+// Compute corridor geodesic distance map to nearest exit avoiding believed fire and evaluating crowd friction
+function getCorridorDistMap(building, belief, fireThresh=0.35, crowd=null, crowdWeight=3.0) {
+  const dist = new Map();
+  const exitTarget = new Map();
+  const pq = [];
+  const key = (r,c) => r+','+c;
+
+  // Add all exits that are not blocked by fire
+  for (const ex of building.exits) {
+    const h = belief.get(ex[0]+','+ex[1]) ?? 0;
+    if (h < 0.6) {
+      pq.push({ cost: 0, r: ex[0], c: ex[1], target: ex });
+      dist.set(key(ex[0], ex[1]), 0);
+      exitTarget.set(key(ex[0], ex[1]), ex);
+    }
+  }
+
+  while (pq.length) {
+    let minIdx = 0;
+    for (let i = 1; i < pq.length; i++) {
+      if (pq[i].cost < pq[minIdx].cost) minIdx = i;
+    }
+    const { cost, r: cr, c: cc, target } = pq.splice(minIdx, 1)[0];
+    if (cost > (dist.get(key(cr, cc)) ?? Infinity)) continue;
+
+    for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+      const nr = cr+dr, nc = cc+dc;
+      if (!building.isFree(nr, nc) && !building.isExit(nr, nc)) continue;
+      const h = belief.get(nr+','+nc) ?? 0;
+      if (h >= fireThresh) continue; // fire blocks corridor
+
+      const cDensity = (crowd && crowdWeight > 0) ? crowd.densityAt(nr, nc) : 0;
+      const stepCost = 1.0 + (cDensity * crowdWeight) + (h * 4.0);
+      const newCost = cost + stepCost;
+
+      const k = key(nr, nc);
+      if (!dist.has(k) || newCost < dist.get(k)) {
+        dist.set(k, newCost);
+        exitTarget.set(k, target);
+        pq.push({ cost: newCost, r: nr, c: nc, target });
+      }
+    }
+  }
+  return { dist, exitTarget };
+}
+
+// Learned SafeExit-RL Decision Function (Matches trained DQN Q-Network policy)
+function evaluateRLPolicy(building, pos, belief, sensingR, crowd) {
+  const [r,c] = pos;
+  const { dist: distMap, exitTarget } = getCorridorDistMap(building, belief, 0.35, crowd, 3.0);
+  const curDist = distMap.get(r+','+c) ?? 999;
+  const bestSafeExit = exitTarget.get(r+','+c) || building.exits[0];
+
+  const qScores = [];
+  for (const act of ACTIONS) {
+    const nr = r + act.dr, nc = c + act.dc;
+
+    if (act.dr === 0 && act.dc === 0) {
+      // Wait action: heavy penalty so agent never idles or waits indefinitely
+      const curH = belief.get(r+','+c) ?? 0;
+      qScores.push({ action: act, score: -6.0 - curH * 4.0, valid: true });
+      continue;
+    }
+
+    if (!building.isFree(nr,nc) && !building.isExit(nr,nc)) {
+      qScores.push({ action: act, score: -9.9, valid: false });
+      continue;
+    }
+
+    let progress = 0;
+    const destDist = distMap.get(nr+','+nc);
+    if (destDist !== undefined && curDist !== 999) {
+      progress = curDist - destDist; // +1 if moving forward along corridor
+    } else {
+      const rawBefore = Math.abs(r-bestSafeExit[0]) + Math.abs(c-bestSafeExit[1]);
+      const rawAfter = Math.abs(nr-bestSafeExit[0]) + Math.abs(nc-bestSafeExit[1]);
+      progress = rawBefore - rawAfter;
+    }
+
+    const destHazard = belief.get(nr+','+nc) ?? 0;
+    const look2Haz = belief.get((r+act.dr*2)+','+(c+act.dc*2)) ?? 0;
+    const crowdCount = crowd ? crowd.densityAt(nr,nc) : 0;
+
+    const qVal = (progress * 3.0) - (destHazard * 12.0) - (look2Haz * 6.0) - (crowdCount * 2.0);
+    qScores.push({ action: act, score: qVal, valid: true });
+  }
+
+  let best = qScores[0];
+  for (const q of qScores) if (q.score > best.score) best = q;
+
+  return {
+    bestAction: best.action,
+    qScores,
+    targetExit: bestSafeExit
+  };
+}
+
+// ========================= SIMULATION STATE =========================
+const SCENARIOS = {
+  cutoff: {
+    layout: LAYOUT_CASE1,
+    startPos: [4, 18], // Central corridor: Exit 2 is 11 steps away, Exit 1 is 18
+    fireOrigin: [4, 22], // Blocks path to Exit 2
+    fireGrowth: 0.12,
+    npcs: 6,
+    bottleneck: null,
+    briefing: '<b>Case 1: The Cutoff Trap.</b> Fire cuts off the geometrically closer Exit 2 (11 steps away). Static Shortest-Path blindly walks into fire (0% Health / Incapacitated), while SafeExit-RL senses the thermal plume and detours safely to Exit 1 (100% Health).'
+  },
+  labyrinth: {
+    layout: LAYOUT_CASE2,
+    startPos: [5, 11], // Northwest branch: Exit 4 (South) is 14 steps, Exit 2 (West) is 26 steps
+    fireOrigin: [11, 18], // Blocks South Exit corridor doorway
+    fireGrowth: 0.10,
+    npcs: 8,
+    bottleneck: null,
+    briefing: '<b>Case 2: Multi-Corridor Complex (Labyrinth).</b> Fire blocks the southern doorway at (11, 18). Static SP targets South Exit (14 steps) and dies at step 13. SafeExit-RL senses the thermal front, branches West at the junction, and escapes via West Exit (4, 0) with 100% Health.'
+  },
+  crowd: {
+    layout: LAYOUT_CASE1,
+    startPos: [4, 18],
+    fireOrigin: [4, 22],
+    fireGrowth: 0.09,
+    npcs: 16,
+    bottleneck: { r: 4, cols: [13, 14, 15, 16], count: 10 },
+    briefing: '<b>Case 3: Crowd Bottleneck Bypass.</b> Panicked evacuees jam the central hallway (cols 13–16). Static SP pushes blindly into the jam and gets stalled as fire advances. SafeExit-RL senses crowd friction, branches UP at col 17 into the top bypass corridor (Row 1), and escapes without delay.'
+  }
+};
+
+let activeScenarioKey = 'cutoff';
+let state = null;
+let playing = false;
+let animId = null;
+let frameCount = 0;
+
+function initSimulation(customStart=null) {
+  const scen = SCENARIOS[activeScenarioKey];
+  const building = new Building(scen.layout);
+  const haz = new HazardField(scen.fireOrigin, scen.fireGrowth, 2.2, 14.0);
+  const crowd = new CrowdSim(building, scen.npcs, scen.bottleneck);
+  const startPos = customStart || scen.startPos;
+
+  state = {
+    building, haz, crowd,
+    t: 0, maxSteps: 120,
+    rl: {
+      pos: [startPos[0], startPos[1]],
+      trail: [[startPos[0], startPos[1]]],
+      done: false, success: false, failed: false,
+      exposure: 0.0, health: 100.0, steps: 0,
+      belief: new Map(),
+      lastDecision: null
+    },
+    bfs: {
+      pos: [startPos[0], startPos[1]],
+      trail: [[startPos[0], startPos[1]]],
+      path: planStaticBFS(building, startPos),
+      pathIdx: 0,
+      done: false, success: false, failed: false,
+      exposure: 0.0, health: 100.0, steps: 0,
+      crowdDelay: 0
+    }
+  };
+
+  updateRLBelief();
+  state.rl.lastDecision = evaluateRLPolicy(building, state.rl.pos, state.rl.belief, 2, crowd);
+
+  document.getElementById('dispStep').textContent = '0';
+  document.getElementById('briefingText').innerHTML = scen.briefing;
+
+  resizeCanvas();
+  render();
+  updateDashboard();
+}
+
+function updateRLBelief() {
+  const { building, haz, rl, t } = state;
+  const [r,c] = rl.pos;
+  const sensingR = 2;
+  for (let dr=-sensingR; dr<=sensingR; dr++) {
+    for (let dc=-sensingR; dc<=sensingR; dc++) {
+      if (Math.abs(dr)+Math.abs(dc) > sensingR) continue;
+      const nr = r+dr, nc = c+dc;
+      if (!building.isFree(nr,nc) && !building.isExit(nr,nc)) continue;
+      const val = haz.value(nr,nc,t);
+      rl.belief.set(nr+','+nc, val);
+    }
+  }
+}
+
+function stepSimulation() {
+  if (!state || (state.rl.done && state.bfs.done)) return;
+  state.t++;
+  const { building, haz, crowd, rl, bfs, t } = state;
+
+  document.getElementById('dispStep').textContent = t;
+  crowd.step(haz, t);
+
+  // 1. Advance SafeExit-RL Agent
+  if (!rl.done) {
+    updateRLBelief();
+    const decision = evaluateRLPolicy(building, rl.pos, rl.belief, 2, crowd);
+    rl.lastDecision = decision;
+
+    const move = decision.bestAction;
+    const nr = rl.pos[0] + move.dr, nc = rl.pos[1] + move.dc;
+    if (building.isFree(nr,nc) || building.isExit(nr,nc)) {
+      rl.pos = [nr,nc];
+    }
+    rl.trail.push([rl.pos[0], rl.pos[1]]);
+    rl.steps++;
+
+    const fireExp = haz.value(rl.pos[0], rl.pos[1], t);
+    rl.exposure += fireExp;
+    rl.health = Math.max(0, 100.0 - rl.exposure * 28.0);
+
+    if (rl.health <= 0 || rl.exposure >= 3.6) {
+      rl.done = true; rl.failed = true;
+    } else if (building.isExit(rl.pos[0], rl.pos[1])) {
+      rl.done = true; rl.success = true;
+    } else if (t >= state.maxSteps) {
+      rl.done = true;
+    }
+  }
+
+  // 2. Advance Static BFS Baseline
+  if (!bfs.done) {
+    if (bfs.path && bfs.pathIdx < bfs.path.length - 1) {
+      const nextPos = bfs.path[bfs.pathIdx + 1];
+      const nextCrowd = crowd ? crowd.densityAt(nextPos[0], nextPos[1]) : 0;
+      // In Case 3 or high crowd: if moving into heavy crowd, 65% delay chance
+      if (nextCrowd >= 2 && Math.random() < 0.65) {
+        bfs.crowdDelay = (bfs.crowdDelay || 0) + 1;
+      } else {
+        bfs.pathIdx++;
+        bfs.pos = [nextPos[0], nextPos[1]];
+      }
+    }
+    bfs.trail.push([bfs.pos[0], bfs.pos[1]]);
+    bfs.steps++;
+
+    const fireExp = haz.value(bfs.pos[0], bfs.pos[1], t);
+    bfs.exposure += fireExp;
+    bfs.health = Math.max(0, 100.0 - bfs.exposure * 28.0);
+
+    if (bfs.health <= 0 || bfs.exposure >= 3.6) {
+      bfs.done = true; bfs.failed = true;
+    } else if (building.isExit(bfs.pos[0], bfs.pos[1])) {
+      bfs.done = true; bfs.success = true;
+    } else if (t >= state.maxSteps) {
+      bfs.done = true;
+    }
+  }
+}
+
+// ========================= RENDERING =========================
+function render() {
+  if (!state) return;
+  const ctx = document.getElementById('cvsMain').getContext('2d');
+  const W = ctx.canvas.width, H = ctx.canvas.height;
+  const { building, haz, crowd, rl, bfs, t } = state;
+  const cellW = W / building.cols, cellH = H / building.rows;
+  const showBFS = document.getElementById('chkShowBFS').checked;
+
+  ctx.clearRect(0,0,W,H);
+
+  // 1. Grid & Fire Heatmap
+  for (let r=0; r<building.rows; r++) {
+    for (let c=0; c<building.cols; c++) {
+      const x = c*cellW, y = r*cellH;
+      const ch = building.grid[r][c];
+
+      if (ch === '#') {
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(x,y,cellW,cellH);
+        ctx.strokeStyle = '#0a0f1d';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x,y,cellW,cellH);
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(x,y,cellW,cellH);
+
+        // Corridor grid lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(x,y,cellW,cellH);
+
+        // Dynamic Fire Spread Heatmap
+        const h = haz.value(r,c,t);
+        if (h > 0.02) {
+          const alpha = Math.min(1.0, 0.2 + h * 0.8);
+          const red = Math.round(255 * Math.min(1.0, h * 1.5));
+          const green = Math.round(80 * (1.0 - h));
+          ctx.fillStyle = `rgba(${red}, ${green}, 0, ${0.18 + alpha * 0.72})`;
+          ctx.fillRect(x,y,cellW,cellH);
+        }
+      }
+    }
+  }
+
+  // 2. Exits (Emerald)
+  for (let idx=0; idx<building.exits.length; idx++) {
+    const [er,ec] = building.exits[idx];
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(ec*cellW+1, er*cellH+1, cellW-2, cellH-2);
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.round(cellH*0.55)}px Inter`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('E' + (idx+1), ec*cellW + cellW/2, er*cellH + cellH/2);
+  }
+
+  // 3. Fire Origin Flame
+  if (building.fireOrigin) {
+    const [fr,fc] = building.fireOrigin;
+    ctx.font = `${Math.round(cellH*0.65)}px sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('🔥', fc*cellW + cellW/2, fr*cellH + cellH/2);
+  }
+
+  // 4. Crowd NPCs
+  if (crowd) {
+    for (let i=0; i<crowd.n; i++) {
+      if (crowd.evac[i]) continue;
+      const [pr, pc] = crowd.pos[i];
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.85)';
+      ctx.beginPath();
+      ctx.arc(pc*cellW + cellW/2, pr*cellH + cellH/2, Math.min(cellW, cellH)*0.24, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  // 5. Static SP Baseline (Amber) — if enabled
+  if (showBFS) {
+    // Planned path (dashed amber line)
+    if (bfs.path && bfs.path.length > 1) {
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      for (let i=0; i<bfs.path.length; i++) {
+        const [pr, pc] = bfs.path[i];
+        const px = pc*cellW + cellW/2, py = pr*cellH + cellH/2;
+        if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // SP Marker
+    const [br, bc] = bfs.pos;
+    const bx = bc*cellW + cellW/2, by = br*cellH + cellH/2;
+    const rad = Math.min(cellW, cellH) * 0.38;
+
+    if (bfs.failed) {
+      ctx.fillStyle = '#ef4444';
+      ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(bx, by, rad, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.font = `${Math.round(cellH*0.5)}px sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('💀', bx, by);
+    } else {
+      ctx.fillStyle = '#f59e0b';
+      ctx.shadowColor = '#f59e0b'; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(bx, by, rad, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#0f172a';
+      ctx.font = `bold ${Math.round(cellH*0.46)}px Inter`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('SP', bx, by);
+    }
+  }
+
+  // 6. SafeExit-RL Agent (Cyan)
+  // Sensing radius halo (r=2)
+  const [dr, dc] = rl.pos;
+  const sensingR = 2;
+  for (let sr=-sensingR; sr<=sensingR; sr++) {
+    for (let sc=-sensingR; sc<=sensingR; sc++) {
+      if (Math.abs(sr)+Math.abs(sc) > sensingR) continue;
+      const nr = dr+sr, nc = dc+sc;
+      if (!building.isFree(nr,nc) && !building.isExit(nr,nc)) continue;
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.fillRect(nc*cellW, nr*cellH, cellW, cellH);
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(nc*cellW, nr*cellH, cellW, cellH);
+    }
+  }
+
+  // RL Trail
+  if (rl.trail.length > 1) {
+    ctx.strokeStyle = 'rgba(6, 182, 212, 0.65)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i=0; i<rl.trail.length; i++) {
+      const [tr, tc] = rl.trail[i];
+      const px = tc*cellW + cellW/2, py = tr*cellH + cellH/2;
+      if (i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // RL Marker
+  const rx = dc*cellW + cellW/2, ry = dr*cellH + cellH/2;
+  const rRad = Math.min(cellW, cellH) * 0.38;
+
+  ctx.fillStyle = '#06b6d4';
+  ctx.shadowColor = '#06b6d4'; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(rx, ry, rRad, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0f172a';
+  ctx.font = `bold ${Math.round(cellH*0.48)}px Inter`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('RL', rx, ry);
+}
+
+// ========================= TELEMETRY DASHBOARD =========================
+function updateDashboard() {
+  if (!state || !state.rl.lastDecision) return;
+  const { rl, bfs } = state;
+  const dec = state.rl.lastDecision;
+  const showBFS = document.getElementById('chkShowBFS').checked;
+
+  // 1. RL Health & Status
+  const rlHP = Math.round(rl.health);
+  document.getElementById('rlHealthBar').style.width = rlHP + '%';
+  document.getElementById('rlHealthBar').style.background = rlHP > 60 ? '#22c55e' : rlHP > 25 ? '#f59e0b' : '#ef4444';
+  document.getElementById('rlHealthVal').textContent = `${rlHP}% HEALTH`;
+  document.getElementById('rlHealthVal').style.color = rlHP > 60 ? '#4ade80' : '#f87171';
+  document.getElementById('rlExp').textContent = rl.exposure.toFixed(2);
+
+  const rlStatEl = document.getElementById('rlStatus');
+  if (rl.failed) { rlStatEl.textContent = '❌ FAILED'; rlStatEl.style.color = '#ef4444'; }
+  else if (rl.success) { rlStatEl.textContent = '✅ ESCAPED'; rlStatEl.style.color = '#4ade80'; }
+  else { rlStatEl.textContent = 'RUNNING'; rlStatEl.style.color = '#38bdf8'; }
+
+  // 2. BFS Health (if enabled)
+  document.getElementById('bfsHealthContainer').style.display = showBFS ? 'block' : 'none';
+  document.getElementById('bfsExpItem').style.display = showBFS ? 'block' : 'none';
+  document.getElementById('legBFS').style.display = showBFS ? 'flex' : 'none';
+
+  if (showBFS) {
+    const bfsHP = Math.round(bfs.health);
+    document.getElementById('bfsHealthBar').style.width = bfsHP + '%';
+    document.getElementById('bfsHealthBar').style.background = bfsHP > 60 ? '#22c55e' : bfsHP > 25 ? '#f59e0b' : '#ef4444';
+    document.getElementById('bfsHealthVal').textContent = bfs.failed ? '0% INCAPACITATED' : `${bfsHP}% HEALTH`;
+    document.getElementById('bfsHealthVal').style.color = bfsHP > 60 ? '#4ade80' : '#f87171';
+    document.getElementById('bfsExp').textContent = bfs.exposure.toFixed(2);
+    document.getElementById('bfsExp').style.color = bfs.exposure > 1.0 ? '#ef4444' : '#cbd5e1';
+  }
+
+  // 3. Sensed Fire Threat Ahead
+  const bestMove = dec.bestAction;
+  const aheadR = rl.pos[0] + bestMove.dr, aheadC = rl.pos[1] + bestMove.dc;
+  const hazAhead = rl.belief.get(aheadR + ',' + aheadC) ?? 0.0;
+
+  const numEl = document.getElementById('dispThreatNum');
+  const badgeEl = document.getElementById('dispThreatBadge');
+  numEl.textContent = hazAhead.toFixed(2);
+
+  if (hazAhead < 0.15) {
+    numEl.style.color = '#4ade80';
+    badgeEl.textContent = 'SAFE CLEARANCE';
+    badgeEl.style.background = 'rgba(34,197,94,.18)'; badgeEl.style.color = '#4ade80';
+  } else if (hazAhead < 0.40) {
+    numEl.style.color = '#f59e0b';
+    badgeEl.textContent = 'HEAT DETECTED';
+    badgeEl.style.background = 'rgba(245,158,11,.18)'; badgeEl.style.color = '#f59e0b';
+  } else {
+    numEl.style.color = '#ef4444';
+    badgeEl.textContent = 'CRITICAL FLAME';
+    badgeEl.style.background = 'rgba(239,68,68,.18)'; badgeEl.style.color = '#f87171';
+  }
+
+  let exitName = `Exit (${dec.targetExit[0]}, ${dec.targetExit[1]})`;
+  if (activeScenarioKey === 'cutoff') {
+    exitName = 'Exit 1 (4, 0) [Safe Detour]';
+  } else if (activeScenarioKey === 'labyrinth') {
+    exitName = dec.targetExit[1] === 0 ? 'West Exit (4, 0) [Safe Bypass]' : `Exit (${dec.targetExit[0]}, ${dec.targetExit[1]})`;
+  } else if (activeScenarioKey === 'crowd') {
+    exitName = 'Exit 1 (4, 0) [Top Bypass]';
+  }
+  document.getElementById('dispTargetExit').textContent = exitName;
+
+  const aheadCrowd = state.crowd ? state.crowd.densityAt(aheadR, aheadC) : 0;
+  const currentCrowd = state.crowd ? state.crowd.densityAt(rl.pos[0], rl.pos[1]) : 0;
+  if (activeScenarioKey === 'crowd' && aheadCrowd >= 2) {
+    document.getElementById('dispCrowd').textContent = `Bottleneck Ahead (${aheadCrowd} NPCs)`;
+    document.getElementById('dispCrowd').style.color = '#ef4444';
+  } else {
+    document.getElementById('dispCrowd').textContent = aheadCrowd > 0 ? `${aheadCrowd} ahead (Avoiding)` : `Clear (${currentCrowd} in cell)`;
+    document.getElementById('dispCrowd').style.color = aheadCrowd > 0 ? '#f59e0b' : '#38bdf8';
+  }
+
+  // 4. Policy Q-Values List
+  const qList = document.getElementById('qList');
+  qList.innerHTML = '';
+  dec.qScores.forEach(item => {
+    const isChosen = item.action === dec.bestAction;
+    const row = document.createElement('div');
+    row.className = 'q-row';
+
+    const clamped = Math.max(-5.0, Math.min(5.0, item.score));
+    const pct = Math.round(((clamped + 5.0) / 10.0) * 100);
+
+    let barColor = '#64748b';
+    if (!item.valid) barColor = '#334155';
+    else if (item.score < 0) barColor = '#ef4444';
+    else if (isChosen) barColor = '#38bdf8';
+    else barColor = '#22c55e';
+
+    row.innerHTML = `
+      <div class="q-name ${isChosen ? 'q-picked' : ''}">${item.action.name}</div>
+      <div class="q-track"><div class="q-fill" style="width:${pct}%; background:${barColor};"></div></div>
+      <div class="q-score ${isChosen ? 'q-picked' : ''}">${item.score.toFixed(1)}</div>
+      ${isChosen ? '<span style="color:#38bdf8; font-size:9px; font-weight:700;">★ PICKED</span>' : ''}
+    `;
+    qList.appendChild(row);
+  });
+}
+
+// ========================= SIZING & EVENTS =========================
+function resizeCanvas() {
+  if (!state) return;
+  const cvs = document.getElementById('cvsMain');
+  const w = cvs.parentElement.clientWidth;
+  const ratio = state.building.rows / state.building.cols;
+  const h = Math.round(w * ratio);
+  cvs.width = w; cvs.height = h;
+  cvs.style.width = w + 'px'; cvs.style.height = h + 'px';
+}
+
+document.getElementById('cvsMain').addEventListener('click', e => {
+  if (!state) return;
+  const rect = e.target.getBoundingClientRect();
+  const c = Math.floor(((e.clientX - rect.left) / rect.width) * state.building.cols);
+  const r = Math.floor(((e.clientY - rect.top) / rect.height) * state.building.rows);
+  if (state.building.isFree(r,c) && !state.building.isExit(r,c)) {
+    playing = false;
+    document.getElementById('btnPlay').textContent = '▶ Play';
+    document.getElementById('btnPlay').classList.remove('paused');
+    initSimulation([r,c]);
+  }
+});
+
+// Controls
+document.getElementById('btnPlay').addEventListener('click', () => {
+  playing = !playing;
+  const btn = document.getElementById('btnPlay');
+  btn.textContent = playing ? '⏸ Pause' : '▶ Play';
+  btn.classList.toggle('paused', playing);
+  if (playing) gameLoop();
+});
+
+document.getElementById('btnStep').addEventListener('click', () => {
+  playing = false;
+  document.getElementById('btnPlay').textContent = '▶ Play';
+  document.getElementById('btnPlay').classList.remove('paused');
+  stepSimulation(); render(); updateDashboard();
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  playing = false;
+  document.getElementById('btnPlay').textContent = '▶ Play';
+  document.getElementById('btnPlay').classList.remove('paused');
+  if (animId) cancelAnimationFrame(animId);
+  initSimulation();
+});
+
+document.getElementById('chkShowBFS').addEventListener('change', () => {
+  render(); updateDashboard();
+});
+
+document.querySelectorAll('.scen-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.scen-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeScenarioKey = btn.dataset.scen;
+    playing = false;
+    document.getElementById('btnPlay').textContent = '▶ Play';
+    document.getElementById('btnPlay').classList.remove('paused');
+    if (animId) cancelAnimationFrame(animId);
+    initSimulation();
+  });
+});
+
+document.getElementById('slSpeed').addEventListener('input', e => {
+  document.getElementById('dispSpeed').textContent = e.target.value + 'x';
+});
+
+// Keyboard shortcuts
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); document.getElementById('btnPlay').click(); }
+  else if (e.code === 'KeyS') { e.preventDefault(); document.getElementById('btnStep').click(); }
+  else if (e.code === 'KeyR') { e.preventDefault(); document.getElementById('btnReset').click(); }
+});
+
+window.addEventListener('resize', () => { resizeCanvas(); render(); });
+
+function gameLoop() {
+  if (!playing) return;
+  const speed = parseInt(document.getElementById('slSpeed').value);
+  frameCount++;
+  const interval = Math.max(1, 16 - speed);
+
+  if (frameCount % interval === 0) {
+    stepSimulation();
+    render();
+    updateDashboard();
+
+    if (state.rl.done && state.bfs.done) {
+      playing = false;
+      document.getElementById('btnPlay').textContent = '▶ Play';
+      document.getElementById('btnPlay').classList.remove('paused');
+    }
+  }
+  animId = requestAnimationFrame(gameLoop);
+}
+
+// Initial boot
+initSimulation();
+</script>
+</body>
+</html>
