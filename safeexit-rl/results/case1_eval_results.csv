@@ -1,0 +1,5 @@
+Method,SuccessRate,AvgExposure,PostDelayExposure,PreDelayExposure,AvgSteps,AvgCrowdTime
+DQN,100.0,0.08,0.08,0.00,17.4,0.1
+Relative Tabular Q,100.0,0.33,0.33,0.00,23.9,0.1
+Static Shortest Path,100.0,0.13,0.13,0.00,9.4,0.1
+Reactive Replanning,100.0,0.12,0.12,0.00,10.1,0.1
