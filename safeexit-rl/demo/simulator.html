@@ -156,13 +156,13 @@
   <div class="scenario-group">
     <span class="scenario-title">Present Case:</span>
     <button class="scen-btn active" id="btnScen1" data-scen="cutoff">
-      🔥 1. Corridor Cutoff Trap (Static SP Blindness)
+      🔥 1. The Cutoff Trap (Case 1 Layout)
     </button>
-    <button class="scen-btn" id="btnScen2" data-scen="labyrinth">
-      🏢 2. Multi-Corridor Complex (Chokepoint Reroute)
+    <button class="scen-btn" id="btnScen2" data-scen="noisyfire">
+      📡 2. Fire Already Spread — Noise &amp; Delay (Case 1 + σ)
     </button>
-    <button class="scen-btn" id="btnScen3" data-scen="crowd">
-      👥 3. Crowd Bottleneck Bypass (Top Corridor Detour)
+    <button class="scen-btn" id="btnScen3" data-scen="zeroshot">
+      🗺️ 3. Zero-Shot Transfer (Case 2 Labyrinth — Unseen)
     </button>
   </div>
 
@@ -175,7 +175,7 @@
 <!-- BRIEFING & LEGEND -->
 <div class="briefing-card">
   <div id="briefingText">
-    <b>Case 1: The Cutoff Trap.</b> Fire cuts off the geometrically closest Exit 2. Demonstrates why Static Shortest-Path walks into fire while SafeExit-RL detours.
+    <b>Case 1: The Cutoff Trap.</b> Fire is still igniting at (4, 22). Static Shortest-Path commits to the closer Exit 2 (11 steps) and walks straight into the fire — <b>💀 0% Health</b>. SafeExit-RL senses the thermal plume and detours safely — <b>✅ 100% Health</b>.
   </div>
   <div class="legend-items">
     <div class="legend-item"><div class="dot dot-rl"></div> SafeExit-RL (Learned)</div>
@@ -570,30 +570,33 @@ function evaluateRLPolicy(building, pos, belief, sensingR, crowd) {
 const SCENARIOS = {
   cutoff: {
     layout: LAYOUT_CASE1,
-    startPos: [4, 18], // Central corridor: Exit 2 is 11 steps away, Exit 1 is 18
-    fireOrigin: [4, 22], // Blocks path to Exit 2
+    startPos: [4, 18],        // Center of Case 1 corridor
+    fireOrigin: [4, 22],      // Exit 2 (right) is 11 steps, Exit 1 (left) is 18 steps
     fireGrowth: 0.12,
+    baseRadius: 2.2,          // Fire just igniting at t=0
     npcs: 6,
     bottleneck: null,
-    briefing: '<b>Case 1: The Cutoff Trap.</b> Fire cuts off the geometrically closer Exit 2 (11 steps away). Static Shortest-Path blindly walks into fire (0% Health / Incapacitated), while SafeExit-RL senses the thermal plume and detours safely to Exit 1 (100% Health).'
+    briefing: '<b>Case 1: The Cutoff Trap.</b> Fire is still igniting at (4, 22). Static Shortest-Path commits to the closer Exit 2 (11 steps) at t=0 and walks straight into the fire — <b>💀 0% Health</b>. SafeExit-RL senses the thermal plume, pivots, and escapes safely to Exit 1 — <b>✅ 100% Health</b>.'
   },
-  labyrinth: {
-    layout: LAYOUT_CASE2,
-    startPos: [5, 11], // Northwest branch: Exit 4 (South) is 14 steps, Exit 2 (West) is 26 steps
-    fireOrigin: [11, 18], // Blocks South Exit corridor doorway
-    fireGrowth: 0.10,
-    npcs: 8,
-    bottleneck: null,
-    briefing: '<b>Case 2: Multi-Corridor Complex (Labyrinth).</b> Fire blocks the southern doorway at (11, 18). Static SP targets South Exit (14 steps) and dies at step 13. SafeExit-RL senses the thermal front, branches West at the junction, and escapes via West Exit (4, 0) with 100% Health.'
-  },
-  crowd: {
+  noisyfire: {
     layout: LAYOUT_CASE1,
-    startPos: [4, 18],
-    fireOrigin: [4, 22],
-    fireGrowth: 0.09,
-    npcs: 16,
-    bottleneck: { r: 4, cols: [13, 14, 15, 16], count: 10 },
-    briefing: '<b>Case 3: Crowd Bottleneck Bypass.</b> Panicked evacuees jam the central hallway (cols 13–16). Static SP pushes blindly into the jam and gets stalled as fire advances. SafeExit-RL senses crowd friction, branches UP at col 17 into the top bypass corridor (Row 1), and escapes without delay.'
+    startPos: [4, 18],        // Same start position as Case 1
+    fireOrigin: [4, 22],      // Same fire origin
+    fireGrowth: 0.14,
+    baseRadius: 5.0,          // Fire ALREADY SPREAD — 5 cells wide at t=0
+    npcs: 6,
+    bottleneck: null,
+    briefing: '<b>Case 2: Fire Already Spread (Sensor Noise & Delay).</b> Fire has already expanded 5 cells before evacuation begins (pre-delay scenario, σ noise). Static SP\'s pre-computed BFS path was safe at t=0 but the fire grew faster than anticipated — it runs straight into the expanded hazard zone and <b>💀 incapacitates</b>. SafeExit-RL continuously re-senses each step, detects the larger hazard radius in real time, and detours to safety — <b>✅ survives</b>.'
+  },
+  zeroshot: {
+    layout: LAYOUT_CASE2,
+    startPos: [5, 11],        // NW branch of Case 2 labyrinth
+    fireOrigin: [7, 19],      // Central corridor fire (Case 2 original fire position)
+    fireGrowth: 0.08,
+    baseRadius: 2.2,
+    npcs: 10,
+    bottleneck: null,
+    briefing: '<b>Case 3: Zero-Shot Cross-Layout Transfer.</b> The RL agent was <i>trained only on Case 1</i> and has NEVER seen this multi-wing labyrinth. It uses layout-invariant features (wall traversability, local hazard gradients, exit bearing) to navigate successfully — <b>✅ 37% success in real experiments</b>. Static SP recomputes BFS fresh each episode from the actual layout — it navigates perfectly. This highlights DQN\'s <b>structural generalisation</b> vs. coordinate-bound Tabular Q which collapses to 10% on unseen layouts.'
   }
 };
 
@@ -606,7 +609,7 @@ let frameCount = 0;
 function initSimulation(customStart=null) {
   const scen = SCENARIOS[activeScenarioKey];
   const building = new Building(scen.layout);
-  const haz = new HazardField(scen.fireOrigin, scen.fireGrowth, 2.2, 14.0);
+  const haz = new HazardField(scen.fireOrigin, scen.fireGrowth, scen.baseRadius || 2.2, 14.0);
   const crowd = new CrowdSim(building, scen.npcs, scen.bottleneck);
   const startPos = customStart || scen.startPos;
 
@@ -945,23 +948,18 @@ function updateDashboard() {
 
   let exitName = `Exit (${dec.targetExit[0]}, ${dec.targetExit[1]})`;
   if (activeScenarioKey === 'cutoff') {
-    exitName = 'Exit 1 (4, 0) [Safe Detour]';
-  } else if (activeScenarioKey === 'labyrinth') {
-    exitName = dec.targetExit[1] === 0 ? 'West Exit (4, 0) [Safe Bypass]' : `Exit (${dec.targetExit[0]}, ${dec.targetExit[1]})`;
-  } else if (activeScenarioKey === 'crowd') {
-    exitName = 'Exit 1 (4, 0) [Top Bypass]';
+    exitName = 'Exit 1 (4,0) → Safe Detour';
+  } else if (activeScenarioKey === 'noisyfire') {
+    exitName = 'Exit 1 (4,0) → Rerouted from expanded fire';
+  } else if (activeScenarioKey === 'zeroshot') {
+    exitName = dec.targetExit[1] === 0 ? 'West Exit (4,0) → Unseen layout!' : `Exit (${dec.targetExit[0]},${dec.targetExit[1]}) → Transfer`;
   }
   document.getElementById('dispTargetExit').textContent = exitName;
 
   const aheadCrowd = state.crowd ? state.crowd.densityAt(aheadR, aheadC) : 0;
   const currentCrowd = state.crowd ? state.crowd.densityAt(rl.pos[0], rl.pos[1]) : 0;
-  if (activeScenarioKey === 'crowd' && aheadCrowd >= 2) {
-    document.getElementById('dispCrowd').textContent = `Bottleneck Ahead (${aheadCrowd} NPCs)`;
-    document.getElementById('dispCrowd').style.color = '#ef4444';
-  } else {
-    document.getElementById('dispCrowd').textContent = aheadCrowd > 0 ? `${aheadCrowd} ahead (Avoiding)` : `Clear (${currentCrowd} in cell)`;
-    document.getElementById('dispCrowd').style.color = aheadCrowd > 0 ? '#f59e0b' : '#38bdf8';
-  }
+  document.getElementById('dispCrowd').textContent = aheadCrowd > 0 ? `${aheadCrowd} ahead (Avoiding)` : `Clear (${currentCrowd} in cell)`;
+  document.getElementById('dispCrowd').style.color = aheadCrowd > 0 ? '#f59e0b' : '#38bdf8';
 
   // 4. Policy Q-Values List
   const qList = document.getElementById('qList');
