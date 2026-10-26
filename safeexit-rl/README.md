@@ -17,7 +17,7 @@ safeexit-rl/
 │   └── case2.txt                  # Multi-wing layout (13x36, 4 exits, rooms, central fire)
 ├── src/
 │   ├── agents/
-│   │   ├── q_learning_agent.py        # Tabular Q-learning (coordinate & relative state modes)
+│   │   ├── q_learning_agent.py        # Tabular Q-learning (relative state representation)
 │   │   ├── dqn_agent.py               # Minimal PyTorch Deep Q-Network (14-dim relative MLP)
 │   │   ├── baseline_shortest_path.py  # Static BFS shortest-path baseline (no replanning)
 │   │   └── baseline_reactive_replan.py# Periodic reactive replanning baseline (k=5 steps)
@@ -66,17 +66,16 @@ SafeExit-RL benchmarks four primary methods across three systematically contrast
 3. **Static Shortest Path** (Offline BFS shortest-path baseline without replanning)
 4. **Reactive Replanning** (Periodic online Dijkstra replanning based on local belief state)
 
-*(Note: Coordinate-based Tabular Q-learning is evaluated strictly as an ablative baseline demonstrating spatial memorization and transfer collapse).*
-
 | Regime | Layout | Pre-Evacuation Delay ($t_{\text{delay}}$) | Description & Focus |
 | :--- | :--- | :---: | :--- |
 | **Case 1** | `layouts/case1.txt` | 0 steps (Immediate) | Immediate evacuation upon fire ignition. Evaluates baseline egress policy performance and noise tolerance. |
 | **Case 2** | `layouts/case1.txt` | 20 steps (~20s Delayed) | Delayed response where occupant remains stationary while fire expands and crowd advances. Evaluates dynamic resilience under severe corridor contamination. |
 | **Case 3** | `layouts/case2.txt` | 0 steps (Cross-Layout) | Zero-shot transfer of Case 1-trained policies to an unseen, structurally distinct building ($13 \times 36$, 4 exits) without retraining. |
 
-### Delay Calibration & Exposure Accounting
-- **Simulation Time Semantics**: Grid cells represent $1.0\text{ m} \times 1.0\text{ m}$ spacing. Pedestrian movement speed $\approx 1.0\text{ m/s} \implies 1\text{ simulation step} \approx 1\text{ second}$. Egress in Case 1 typically takes 10-18 steps (approx. 10-18 seconds).
-- **Physical Interpretation of Delay**: At $t_{\text{delay}} = 20\text{ s}$, the hazard radius has expanded from $0.95\text{ m}$ to $2.38\text{ m}$, heavily contaminating the central corridor and causing ~40% of simulated NPCs to evacuate. At $t \ge 60\text{ s}$, the eastern exit becomes blocked ($\ge 0.30$ hazard). Thus, $t=20\text{ s}$ constitutes a rigorous, calibrated bottleneck without making escape physically impossible.
+### Delay Parameterization & Exposure Accounting
+- **Simulation Time Assumptions**: Under nominal assumptions of $1.0\text{ m} \times 1.0\text{ m}$ grid cell spacing and an unhindered pedestrian movement speed of $\approx 1.0\text{ m/s}$, one simulation step corresponds approximately to one second ($1\text{ step} \approx 1\text{ second}$). Egress in Case 1 typically takes 10-18 steps (approx. 10-18 seconds under these nominal assumptions).
+- **Delay as a Simulation Parameter**: The pre-evacuation delay $t_{\text{delay}} = 20\text{ steps}$ is a chosen simulation parameter, selected to generate a substantial central corridor hazard bottleneck while keeping egress viable. At $t_{\text{delay}} = 20\text{ steps}$, the synthetic hazard radius has expanded from $0.95\text{ m}$ to $2.38\text{ m}$, affecting the central corridor and allowing ~40% of simulated NPCs to evacuate before the occupant begins moving. At $t \ge 60\text{ steps}$, the eastern exit becomes blocked ($\ge 0.30$ hazard).
+- **Physical Calibration Disclaimer**: Physical calibration has not been validated against empirical fire egress experiments or real-world building evacuation data. The synthetic sigmoidal radial model serves solely as a computationally tractable simulation proxy for environmental tenability, not a physically validated combustion or Fractional Effective Dose (FED) model.
 - **Exposure Metric Separation**: Total exposure accumulated from ignition is partitioned into:
   $$\text{Total Exposure} = E_{\text{pre-delay}} + E_{\text{post-delay}}$$
   Terminal exit reward uses $E_{\text{post-delay}}$ in $\max(0, 1 - E_{\text{post-delay}})$ to maintain reinforcement gradients, while both metrics are explicitly tracked without double-counting.
@@ -135,7 +134,7 @@ Outputs: `results/case3_cross_layout_results.csv`, `results/case3_cross_layout_c
 
 ### 6. Reproduce Noise & Latency Sensitivity Sweep
 ```bash
-python -m experiments.sweep_noise_delay --checkpoint results/qtable.npy --dqn-checkpoint results/dqn_model.pt --layout layouts/case1.txt
+python -m experiments.sweep_noise_delay --checkpoint results/qtable_relative.npy --dqn-checkpoint results/dqn_model.pt --layout layouts/case1.txt
 ```
 Outputs:
 - 4-panel sweep figure: `results/sweep_noise_delay.png`
@@ -181,14 +180,7 @@ Outputs:
 | **Static Shortest Path** | 100.0% | 0.03 | 10.7 | 0.0 | Global topology BFS baseline |
 | **Reactive Replanning** | 99.0% | 1.83 | 12.9 | 0.0 | Global topology periodic replanning |
 
-*Takeaway:* Relative state representations (Relative Tabular Q at 24% and DQN at 25%) achieve 2.5x higher success rates than coordinate memorization (10%), successfully navigating local corridors via exit bearing. Classical baselines leverage full topological maps to find global paths, underscoring the distinction between local perception-action RL and global graph search in unseen environments.
-
-#### Ablative Baseline (Excluded from Primary Comparison)
-Coordinate-based Tabular Q-learning is excluded from the primary comparison because absolute spatial coordinates cannot transfer across building geometries. It is retained strictly as an ablative benchmark demonstrating spatial memorization:
-
-| Ablative Method | Success % | Total Exposure | Evacuation Steps | High-Crowd Steps | Notes |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **Coordinate Tabular Q** | 10.0% | 47.93 | 180.9 | 0.1 | Overfits to Case 1 coordinates; fails on unseen geometry |
+*Takeaway:* Relative state representations (Relative Tabular Q at 24% and DQN at 25%) successfully navigate local corridors via exit bearing. Classical baselines leverage full topological maps to find global paths, underscoring the distinction between local perception-action RL and global graph search in unseen environments.
 
 ---
 

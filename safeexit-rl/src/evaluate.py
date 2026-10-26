@@ -136,12 +136,11 @@ def plot_comparison(all_metrics, save_path="results/comparison.png", title=None)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", default=None, help="Coordinate Tabular Q checkpoint (excluded from primary comparisons)")
-    parser.add_argument("--rel-checkpoint", default="results/qtable_relative.npy", help="Relative Tabular Q checkpoint (primary method)")
+    parser.add_argument("--checkpoint", "--rel-checkpoint", dest="rel_checkpoint",
+                        default="results/qtable_relative.npy", help="Relative Tabular Q checkpoint (primary method)")
     parser.add_argument("--dqn-checkpoint", default="results/dqn_model.pt", help="DQN checkpoint (primary method)")
     parser.add_argument("--layout", default="layouts/case1.txt")
     parser.add_argument("--pre-evacuation-delay", type=int, default=0, help="Pre-evacuation delay steps")
-    parser.add_argument("--include-coord-q", action="store_true", help="Include coordinate Tabular Q in evaluation (non-primary)")
     parser.add_argument("--n-eval-episodes", type=int, default=100)
     parser.add_argument("--n-seeds", type=int, default=5)
     parser.add_argument("--obs-noise-std", type=float, default=0.1)
@@ -184,18 +183,6 @@ def main():
                                      pre_evacuation_delay=args.pre_evacuation_delay)
         all_metrics["Relative Tabular Q"] = aggregate(rel_results)
 
-    # Optional: Coordinate Tabular Q (Excluded from primary comparisons by default)
-    if args.include_coord_q and args.checkpoint and os.path.exists(args.checkpoint):
-        coord_agent = QLearningAgent(epsilon_start=0.0, epsilon_end=0.0,
-                                     state_mode="coordinate", unseen_action_fallback="arbitrary")
-        coord_agent.load(args.checkpoint)
-        coord_results = evaluate_agent(coord_agent, "rl", args.layout, n_ep, seeds,
-                                       obs_noise_std=args.obs_noise_std,
-                                       obs_delay=args.obs_delay,
-                                       panic_prob=args.panic_prob,
-                                       herding_prob=args.herding_prob,
-                                       pre_evacuation_delay=args.pre_evacuation_delay)
-        all_metrics["Coordinate Tabular Q"] = aggregate(coord_results)
 
     # 3. Static shortest-path baseline (Primary baseline)
     sp_agent = StaticShortestPathAgent()

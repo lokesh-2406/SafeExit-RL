@@ -6,7 +6,7 @@ RL agent vs. both baselines.
 This result doesn't exist in SafeStep (which assumes near-perfect sensing).
 
 Usage:
-    python -m experiments.sweep_noise_delay --checkpoint results/qtable.npy
+    python -m experiments.sweep_noise_delay --checkpoint results/qtable_relative.npy
 """
 import argparse
 import os
@@ -61,7 +61,7 @@ def evaluate_combo(agent, agent_type, layout, sigma, delay, n_episodes, seeds):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", default="results/qtable.npy")
+    parser.add_argument("--checkpoint", default="results/qtable_relative.npy")
     parser.add_argument("--dqn-checkpoint", default="results/dqn_model.pt")
     parser.add_argument("--layout", default="layouts/case1.txt")
     args = parser.parse_args()
@@ -74,11 +74,12 @@ def main():
     markers = {}
 
     if os.path.exists(args.checkpoint):
-        rl_agent = QLearningAgent(epsilon_start=0.0, epsilon_end=0.0)
+        rl_agent = QLearningAgent(state_mode="relative", unseen_action_fallback="exit_bearing",
+                                  epsilon_start=0.0, epsilon_end=0.0)
         rl_agent.load(args.checkpoint)
-        agents.append(("Tabular Q", rl_agent, "rl"))
-        colors["Tabular Q"] = "#2196F3"
-        markers["Tabular Q"] = "o"
+        agents.append(("Relative Tabular Q", rl_agent, "rl"))
+        colors["Relative Tabular Q"] = "#2196F3"
+        markers["Relative Tabular Q"] = "o"
 
     if os.path.exists(args.dqn_checkpoint):
         from src.agents.dqn_agent import DQNAgent

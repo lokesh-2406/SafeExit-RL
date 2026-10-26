@@ -45,12 +45,11 @@ def _crowd_bin(count: int) -> int:
     return min(count, 3)
 
 
-def discretize_observation(obs, state_mode: str = "coordinate") -> tuple:
+def discretize_observation(obs, state_mode: str = "relative") -> tuple:
     """Map an Observation object to a discrete state key.
 
-    Modes:
-      - 'coordinate': (row, col, haz_b, crowd_b, exit_dir)
-      - 'relative': (local_walls, haz_b, crowd_b, exit_dir)
+    Default mode:
+      - 'relative': (local_walls, haz_b, crowd_b, exit_dir) - coordinate-invariant
     """
     pos = obs.position
 
@@ -76,7 +75,7 @@ class QLearningAgent:
     def __init__(self, alpha: float = 0.1, gamma: float = 0.95,
                  epsilon_start: float = 1.0, epsilon_end: float = 0.05,
                  epsilon_decay_episodes: int = 1500, seed: int = 0,
-                 state_mode: str = "coordinate",
+                 state_mode: str = "relative",
                  unseen_action_fallback: str = "exit_bearing"):
         self.alpha = alpha
         self.gamma = gamma

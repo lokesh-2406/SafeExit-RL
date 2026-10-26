@@ -208,9 +208,8 @@ GitHub link are at top.
 - [x] **Case 1: Original Layout, Immediate Evacuation (`layouts/case1.txt`, delay=0):**
   - Evaluates immediate evacuation response upon fire ignition at $(4, 22)$.
   - Primary comparison methods: (1) DQN, (2) Relative Tabular Q-learning, (3) Static Shortest Path, (4) Reactive Replanning.
-  - Coordinate Tabular Q-learning excluded from primary comparisons (available as ablative baseline).
   - Outputs: `results/case1_eval_results.csv`, `results/case1_comparison.png`.
-- [x] **Case 2: Same Layout, Delayed Evacuation (`layouts/case1.txt`, calibrated delay $t_{\text{delay}}=20$ steps):**
+- [x] **Case 2: Same Layout, Delayed Evacuation (`layouts/case1.txt`, chosen delay $t_{\text{delay}}=20$ steps):**
   - Primary occupant remains stationary during delay while hazard expands and crowd advances.
   - Delay does not consume the post-delay evacuation step budget ($T_{\text{max}}=200$).
   - Separate exposure accounting: Total Exposure = Pre-Delay Exposure + Post-Delay Exposure (no double counting).
@@ -221,14 +220,14 @@ GitHub link are at top.
   - Tests zero-shot spatial transfer of Case 1-trained policies on a structurally distinct $13 \times 36$ layout with 4 exits and multi-wing corridors.
   - All four primary methods evaluated without weight updates: `results/case3_cross_layout_results.csv`, `results/case3_cross_layout_comparison.png`.
 
-### 2. Delay Calibration & Physical Interpretation
-- **Step-to-Time Semantics:** Grid cell size $\approx 1.0\text{ m}$, pedestrian speed $\approx 1.0\text{ m/s} \implies 1\text{ step} \approx 1\text{ s}$.
+### 2. Delay Parameterization & Exposure Accounting
+- **Simulation Time Assumptions:** Under nominal assumptions of $\approx 1.0\text{ m}$ grid cell size and $\approx 1.0\text{ m/s}$ pedestrian speed, $1\text{ step} \approx 1\text{ s}$.
 - **Hazard Dynamics:** Sigmoid radial growth $r(t) = 20.0 / (1 + \exp(-0.05(t - 60)))$.
   - At $t=0$, $r=0.95$ (only cell $(4, 22)$ active).
   - At $t=20$, $r=2.38$ (hazard blocks central corridor, 12 cells contaminated, ~40% crowd evacuated).
   - At $t=60$, $r=10.0$ (east exit blocked at hazard $\ge 0.30$).
-  - Canonical delay $t_{\text{delay}}=20$ steps (~20s) represents realistic pre-movement delay, severely challenging local path planning while maintaining route feasibility.
-- **Physical Distinction:** The synthetic radial hazard model is an abstract proxy for smoke/thermal tenability, distinct from computational fluid dynamics (CFD/FDS) and physical Fractional Effective Dose (FED).
+  - Chosen simulation delay $t_{\text{delay}}=20$ steps creates a challenging corridor bottleneck while maintaining route viability.
+- **Physical Calibration Disclaimer:** Physical calibration has not been validated against empirical fire egress experiments or real-world building evacuation trials; the synthetic radial hazard model is an abstract proxy rather than a physically validated Fractional Effective Dose (FED) model.
 
 ### 3. Comprehensive Test Suite
 - [x] Renamed `tests/test_bonus.py` $\to$ `tests/test_extended_features.py` (39 tests total across suite).

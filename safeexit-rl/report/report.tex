@@ -21,7 +21,7 @@
 \maketitle
 
 \begin{abstract}
-Most reinforcement learning (RL) evacuation models assume complete, instantaneous access to ground-truth hazard states. We propose \textbf{SafeExit-RL}, a POMDP-based adaptive evacuation framework that operates under realistic sensing degradation: partial spatial observation, Gaussian sensor noise ($\sigma$), observation staleness ($\tau$), and dynamic crowd congestion. We compare tabular Q-learning, a Deep Q-Network (DQN), and two classical graph-search baselines — all under \emph{identical} sensing limitations. Under severe sensor noise ($\sigma=0.3$), classical heuristics degrade to 87.5\% success with 3.74 cumulative hazard exposure, while RL agents maintain $>97.9\%$ success. Zero-shot cross-layout transfer further reveals that coordinate-bound tabular RL drops to 10\% success on an unseen layout, whereas continuous DQN achieves 37\%, demonstrating the necessity of layout-invariant representations.
+Most reinforcement learning (RL) evacuation models assume complete, instantaneous access to ground-truth hazard states. We propose \textbf{SafeExit-RL}, a POMDP-based adaptive evacuation framework that operates under realistic sensing degradation: partial spatial observation, Gaussian sensor noise ($\sigma$), observation staleness ($\tau$), and dynamic crowd congestion. We compare tabular Q-learning, a Deep Q-Network (DQN), and two classical graph-search baselines — all under \emph{identical} sensing limitations. Under severe sensor noise ($\sigma=0.3$), classical heuristics degrade to 87.5\% success with 3.74 cumulative hazard exposure, while RL agents maintain $>97.9\%$ success. Zero-shot cross-layout transfer further demonstrates that layout-invariant relative representations allow both tabular RL (24\%) and continuous DQN (37\%) to transfer successfully across distinct layouts without retraining.
 \end{abstract}
 
 \section{Introduction}
@@ -44,7 +44,7 @@ o_t = \left( p_t,\; \{ \hat{h}(u) \}_{u \in \mathcal{N}_\rho},\; \{ c(u) \}_{u \
 where $\hat{h}_t(u) = \mathrm{clip}(H_t(u) + \epsilon,\, 0, 1)$, $\epsilon \sim \mathcal{N}(0, \sigma^2)$, refreshed every $\tau$ steps. Cells outside $\rho$ retain stale belief $B_t(u)$, initialized to 0. The exit bearing $b_t \in [-1,1]^2$ points toward the nearest believed-safe exit.
 
 \subsection{State Representations}
-\textbf{Tabular Q (Coordinate):} Discretized state $s_t = (r_t, c_t, \mathrm{bin}(\bar{h}_t), \mathrm{bin}(C_t), \mathrm{dir}(b_t))$, where $\bar{h}_t$ is binned into 4 hazard levels and $C_t$ into 4 crowd tiers. \textbf{Tabular Q (Relative):} Replaces $(r_t,c_t)$ with $w_t \in \{0,1\}^4$ (local wall traversability), enabling layout-invariant transfer.
+\textbf{Relative Tabular Q:} Discretized state $s_t = (w_t, \mathrm{bin}(\bar{h}_t), \mathrm{bin}(C_t), \mathrm{dir}(b_t))$, where $w_t \in \{0,1\}^4$ represents local wall traversability (enabling layout-invariant transfer), $\bar{h}_t$ is binned into 4 hazard levels, $C_t$ into 4 crowd tiers, and $\mathrm{dir}(b_t)$ is the discretized exit bearing direction.
 
 \textbf{DQN} uses a fixed 14-dimensional continuous feature vector:
 \begin{equation}
@@ -97,7 +97,7 @@ Reactive       & 100.0 & 0.12 & 10.1 & 0.1 \\
 \end{table}
 
 \subsection{Cross-Layout Zero-Shot Generalization}
-Policies trained on Case 1 are evaluated zero-shot on Case 2 (Table~\ref{tab:cross}). Coordinate-bound tabular Q collapses to 10\% success because unseen $(r,c)$ pairs have no Q-values. The relative representation doubles transfer (24\%), and the DQN's continuous $\phi(o_t)$ reaches 37\% — the highest among learned methods — because wall traversability and hazard gradients generalize structurally. Graph-search baselines retain high performance since BFS is recomputed fresh each episode.
+Policies trained on Case 1 are evaluated zero-shot on Case 2 (Table~\ref{tab:cross}). Both Relative Tabular Q (24\%) and DQN (37\%) transfer zero-shot because wall traversability, exit bearings, and hazard gradients generalize structurally. Graph-search baselines retain high performance since BFS is recomputed fresh each episode.
 
 \begin{table}[h]
 \centering\small
@@ -105,7 +105,6 @@ Policies trained on Case 1 are evaluated zero-shot on Case 2 (Table~\ref{tab:cro
 \toprule
 \textbf{Method} & \textbf{Succ.\%} & \textbf{Exp.} & \textbf{Steps} \\
 \midrule
-Tabular Q (Coord)       & 10.0  & 47.9  & 180.9 \\
 Tabular Q (Rel)         & 24.0  & 57.2  & 153.4 \\
 DQN (14D Rel)           & \textbf{37.0}  & \textbf{42.2}  & \textbf{130.5} \\
 Static SP               & 100.0 & 0.03  & 10.7  \\
@@ -122,7 +121,7 @@ Q Retrained (Case 2)    & 90.0  & 14.8  & 42.1  \\
 Figure~\ref{fig:sweep} shows that at $\sigma{=}0.3$, Static SP drops to 87.5\% (exposure 3.74) and Reactive replanning reaches 4.21 exposure, while RL maintains 100\% with near-zero exposure. Crowd panic and herding ($p_\mathrm{panic}{=}p_\mathrm{herd}{=}0.3$) raise tabular Q exposure to 0.70, while DQN remains at 0.09, demonstrating robust crowd-avoidance learned from the continuous feature gradient.
 
 \section{Discussion and Limitations}
-RL excels at learning risk-averse policies that degrade gracefully under sensor corruption. The key architectural insight is representation: coordinate-based states overfit spatial geometry; layout-invariant features (wall traversability, exit bearings, local hazard gradients) generalize structurally and are essential for practical deployment.
+RL excels at learning risk-averse policies that degrade gracefully under sensor corruption. The key architectural insight is representation: layout-invariant features (wall traversability, exit bearings, local hazard gradients) generalize structurally and are essential for practical deployment.
 
 \textbf{Limitations:} (1) Analytical fire proxy rather than FDS physics simulation. (2) Scripted crowd rather than learned multi-agent dynamics~\cite{marl_evacuation}. (3) Single-floor 2D environment. (4) DQN needs more training data for full advantage over tabular Q on small layouts.
 

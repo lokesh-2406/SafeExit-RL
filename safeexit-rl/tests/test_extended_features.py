@@ -4,7 +4,7 @@ Comprehensive tests for SafeExit-RL extended features and three-case revision:
   2. Pre-evacuation delay, stationary occupant, hazard & crowd progression, exposure accounting
   3. Observation encoding (fixed-size 14D) and DQN agent
   4. DQN training update, terminal Bellman target, checkpoint save/load
-  5. Q-learning state representations (coordinate vs relative) and unseen fallback
+  5. Q-learning relative state representation and unseen fallback
   6. CrowdSim panic and herding behaviors, regression safety, seed determinism
   7. Evaluation non-mutation guarantee and 4 primary comparison methods
   8. Case 3 zero-shot cross-layout transfer execution without retraining
@@ -272,13 +272,8 @@ def test_q_learning_discretize_modes():
     env = SafeExitEnv(CASE1, seed=10)
     obs = env.reset()
 
-    # Coordinate mode includes absolute (r, c)
-    state_coord = discretize_observation(obs, state_mode="coordinate")
-    assert state_coord[0] == obs.position[0]
-    assert state_coord[1] == obs.position[1]
-
-    # Relative mode uses local walls instead of (r, c)
-    state_rel = discretize_observation(obs, state_mode="relative")
+    # Default discretization uses relative mode (walls, haz_b, crowd_b, exit_dir)
+    state_rel = discretize_observation(obs)
     assert state_rel[0] == getattr(obs, "local_walls", ())
     assert len(state_rel) == 4
 
@@ -404,8 +399,8 @@ def test_case3_trained_policy_zero_shot_transfer():
     dqn_ckpt = "results/dqn_model.pt"
     rel_ckpt = "results/qtable_relative.npy"
 
-    if not (os.path.exists(dqn_ckpt) and os.path.exists(rel_ckpt)):
-        pytest.skip(f"Case 1 trained checkpoints missing: {dqn_ckpt} or {rel_ckpt}")
+    assert os.path.exists(dqn_ckpt), f"Required Case 1 DQN checkpoint missing: {dqn_ckpt}"
+    assert os.path.exists(rel_ckpt), f"Required Case 1 Relative Tabular Q checkpoint missing: {rel_ckpt}"
 
     # 1. Load trained Case 1 DQN agent
     agent_dqn = DQNAgent(seed=42)

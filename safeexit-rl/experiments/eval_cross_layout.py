@@ -31,8 +31,6 @@ def main():
     parser.add_argument("--layout", default="layouts/case2.txt", help="Case 3 layout (unseen)")
     parser.add_argument("--dqn-checkpoint", default="results/dqn_model.pt")
     parser.add_argument("--rel-checkpoint", default="results/qtable_relative.npy")
-    parser.add_argument("--coord-checkpoint", default=None, help="Optional coordinate Q checkpoint")
-    parser.add_argument("--include-coord-q", action="store_true", help="Include coordinate Tabular Q (non-primary)")
     parser.add_argument("--n-eval-episodes", type=int, default=100)
     parser.add_argument("--n-seeds", type=int, default=5)
     parser.add_argument("--obs-noise-std", type=float, default=0.1)
@@ -48,41 +46,58 @@ def main():
 
     print(f"=== Case 3: Cross-Layout Evaluation on {args.layout} (Trained on Case 1) ===")
 
-    # 1. DQN (Primary method)
-    if os.path.exists(args.dqn_checkpoint):
-        agent_dqn = DQNAgent()
+    # Validate required Case 1 trained checkpoints early
+    if not os.path.exists(args.dqn_checkpoint):
+        raise FileNotFoundError(
+            f"Case 3 evaluation requires DQN checkpoint: '{args.dqn_checkpoint}' was not found. "
+            "Ensure Case 1 DQN training has been completed."
+        )
+    if not os.path.exists(args.rel_checkpoint):
+        raise FileNotFoundError(
+            f"Case 3 evaluation requires Relative Tabular Q checkpoint: '{args.rel_checkpoint}' was not found. "
+            "Ensure Case 1 Relative Tabular Q training has been completed."
+        )
+
+    # 1. DQN (Primary method 1)
+    agent_dqn = DQNAgent()
+    try:
         agent_dqn.load(args.dqn_checkpoint)
-        res_dqn = evaluate_agent(agent_dqn, "dqn", args.layout, n_ep, seeds,
-                                 obs_noise_std=args.obs_noise_std, obs_delay=args.obs_delay)
-        all_metrics["DQN"] = aggregate(res_dqn)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load DQN checkpoint from '{args.dqn_checkpoint}': {e}") from e
+    res_dqn = evaluate_agent(agent_dqn, "dqn", args.layout, n_ep, seeds,
+                             obs_noise_std=args.obs_noise_std, obs_delay=args.obs_delay)
+    all_metrics["DQN"] = aggregate(res_dqn)
 
-    # 2. Tabular Q (Relative-state - Primary tabular method)
-    if os.path.exists(args.rel_checkpoint):
-        agent_rel = QLearningAgent(state_mode="relative", unseen_action_fallback="exit_bearing")
+    # 2. Relative Tabular Q (Primary method 2)
+    agent_rel = QLearningAgent(state_mode="relative", unseen_action_fallback="exit_bearing")
+    try:
         agent_rel.load(args.rel_checkpoint)
-        res_rel = evaluate_agent(agent_rel, "rl", args.layout, n_ep, seeds,
-                                 obs_noise_std=args.obs_noise_std, obs_delay=args.obs_delay)
-        all_metrics["Relative Tabular Q"] = aggregate(res_rel)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load Relative Tabular Q checkpoint from '{args.rel_checkpoint}': {e}") from e
+    if agent_rel.state_mode != "relative":
+        raise ValueError(
+            f"Invalid Relative Tabular Q checkpoint: expected state_mode='relative', got '{agent_rel.state_mode}'"
+        )
+    if len(agent_rel.q_table) == 0:
+        raise ValueError(
+            f"Invalid Relative Tabular Q checkpoint from '{args.rel_checkpoint}': Q-table is empty."
+        )
+    res_rel = evaluate_agent(agent_rel, "rl", args.layout, n_ep, seeds,
+                             obs_noise_std=args.obs_noise_std, obs_delay=args.obs_delay)
+    all_metrics["Relative Tabular Q"] = aggregate(res_rel)
 
-    # Optional: Coordinate-based Tabular Q (Excluded from primary comparisons)
-    if args.include_coord_q and args.coord_checkpoint and os.path.exists(args.coord_checkpoint):
-        agent_coord = QLearningAgent(state_mode="coordinate", unseen_action_fallback="arbitrary")
-        agent_coord.load(args.coord_checkpoint)
-        res_coord = evaluate_agent(agent_coord, "rl", args.layout, n_ep, seeds,
-                                   obs_noise_std=args.obs_noise_std, obs_delay=args.obs_delay)
-        all_metrics["Coordinate Tabular Q"] = aggregate(res_coord)
-
-    # 3. Static Shortest-Path Baseline
+    # 3. Static Shortest-Path Baseline (Primary method 3)
     sp_agent = StaticShortestPathAgent()
     res_sp = evaluate_agent(sp_agent, "static", args.layout, n_ep, seeds,
                             obs_noise_std=args.obs_noise_std, obs_delay=args.obs_delay)
     all_metrics["Static Shortest Path"] = aggregate(res_sp)
 
-    # 4. Reactive Replanning Baseline
+    # 4. Reactive Replanning Baseline (Primary method 4)
     rr_agent = ReactiveReplanAgent(replan_interval=5)
     res_rr = evaluate_agent(rr_agent, "reactive", args.layout, n_ep, seeds,
                             obs_noise_std=args.obs_noise_std, obs_delay=args.obs_delay)
     all_metrics["Reactive Replanning"] = aggregate(res_rr)
+
 
     # Print Table
     print(f"\n{'Method':<25} {'Success%':>10} {'TotalExp':>10} {'Steps':>10} {'CrowdTime':>10}")
@@ -95,7 +110,7 @@ def main():
     methods = list(all_metrics.keys())
     metric_names = ["success_rate", "avg_exposure", "avg_steps", "avg_crowd_time"]
     display_names = ["Success %", "True Exposure", "Steps to Exit", "High-Crowd Steps"]
-    palette = ["#9C27B0", "#2196F3", "#FF9800", "#4CAF50", "#F44336"]
+    palette = ["#9C27B0", "#2196F3", "#FF9800", "#4CAF50"]
     colors = [palette[i % len(palette)] for i in range(len(methods))]
 
     fig, axes = plt.subplots(1, 4, figsize=(18, 4))
