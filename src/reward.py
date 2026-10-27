@@ -3,14 +3,12 @@ Reward function for SafeExit-RL.
 
 r_t = w1*R_progress + w2*R_hazard_belief + w3*R_congestion + w4*R_terminal
 
-Design intent (see PLAN.md Phase 3):
+Design:
   - R_progress and R_hazard_belief/R_congestion use information the agent
     ACTUALLY has (its belief_state), not ground truth.
   - R_terminal uses TRUE cumulative exposure (ground truth) when the agent
     reaches an exit -- i.e. the world can punish risks the agent didn't see.
 
-Do not copy SafeStep's exact weight values -- tune your own via a few
-sweep runs and document the chosen values + rationale in the README.
 """
 from dataclasses import dataclass
 
